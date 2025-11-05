@@ -96,8 +96,13 @@ func (s *Server) handleSignaling(w http.ResponseWriter, r *http.Request) {
 	peerID := uuid.New().String()
 	s.logger.Info("New signaling connection from peer %s", peerID)
 
+	// Declare peer variable first for closure
+	var peer *webrtc.PeerConnection
+
 	// Create peer connection
-	peer, err := s.webrtcManager.CreatePeerConnection(peerID, s.handleDataChannelMessage)
+	peer, err = s.webrtcManager.CreatePeerConnection(peerID, func(msg *protocol.Message) {
+		s.handleDataChannelMessage(peerID, peer, msg)
+	})
 	if err != nil {
 		s.logger.Error("Failed to create peer connection: %v", err)
 		return
@@ -157,11 +162,21 @@ func (s *Server) handleSignaling(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDataChannelMessage handles messages received over the DataChannel
-func (s *Server) handleDataChannelMessage(msg *protocol.Message) {
+func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnection, msg *protocol.Message) {
 	switch msg.Type {
 	case protocol.MessageTypeControlPing:
-		s.logger.Debug("Received ping")
-		// TODO: Send pong response
+		s.logger.Debug("Received ping from peer %s", peerID)
+
+		// Send pong response
+		pongMsg := &protocol.Message{
+			Type:      protocol.MessageTypeControlPong,
+			Timestamp: time.Now().UnixMilli(),
+		}
+		if err := peer.SendMessage(pongMsg); err != nil {
+			s.logger.Error("Failed to send pong: %v", err)
+		} else {
+			s.logger.Debug("Sent pong to peer %s", peerID)
+		}
 
 	case protocol.MessageTypeAudioChunk:
 		// Parse audio chunk
