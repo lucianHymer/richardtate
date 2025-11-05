@@ -38,6 +38,9 @@ config.local.yaml
 *.bin
 models/
 
+# Dependencies (whisper.cpp, etc.)
+deps/
+
 # Build artifacts
 dist/
 build/

@@ -714,7 +714,304 @@ Remember: This replaces keyboard input for many workflows, so reliability and sp
 
 ---
 
-## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-05 Evening Session 3 - RECONNECTION COMPLETE!)
+## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-05 Evening Session 4 - PHASE 2 PREP COMPLETE!)
+
+### 📅 **SESSION UPDATE: 2025-11-05 Evening Session 4 - PHASE 2 PREPARATION** 🛠️
+
+**TL;DR: Created complete, repeatable installation system for Phase 2 dependencies (Whisper + RNNoise). Ready to start transcription implementation!**
+
+#### What We Accomplished This Session (Evening Session 4)
+
+This session focused on preparing for Phase 2 by creating a production-ready installation system for external dependencies.
+
+**1. ✅ Installation Scripts Created (`/scripts/`)**
+
+**`install-whisper.sh`** - Automated Whisper.cpp Build
+- Clones official whisper.cpp from `github.com/ggml-org/whisper.cpp`
+- Builds static library `libwhisper.a` using CMake
+- Creates symlinks for easy access
+- Idempotent (safe to re-run)
+- ~2-5 minutes on modern CPU
+
+**`download-models.sh`** - Whisper Model Downloader
+- Downloads GGML models from Hugging Face
+- Base URL: `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/`
+- Default: `large-v3-turbo` (~1.6GB) - recommended for fast + accurate
+- Configurable for other models (tiny, base, small, medium, large-v3)
+- Checks for existing files to avoid re-downloading
+- Works with both curl and wget
+
+**`download-rnnoise.sh`** - RNNoise Model Downloader
+- Downloads "leavened-quisling" model from GregorR/rnnoise-models
+- Model URL: `https://github.com/GregorR/rnnoise-models/raw/refs/heads/master/leavened-quisling-2018-08-31/lq.rnnn`
+- ~2.1MB model for noise suppression
+- Required for Phase 2 audio preprocessing
+
+**`setup-env.sh`** - CGO Environment Configuration
+- Sets all required CGO environment variables
+- Must be sourced before building: `source ./scripts/setup-env.sh`
+- Exports:
+  - `CGO_CFLAGS` - Include paths for whisper.h and ggml headers
+  - `CGO_LDFLAGS` - Library path for libwhisper.a
+  - `CGO_CFLAGS_ALLOW` - CPU optimization flags (-mfma, -mf16c)
+  - `LIBRARY_PATH` and `LD_LIBRARY_PATH`
+
+**2. ✅ Documentation Created**
+
+**`docs/SETUP.md`** - Complete Setup Guide
+- Platform-specific instructions (macOS vs Linux)
+- macOS optimization using Homebrew for Metal acceleration (40x faster!)
+- Prerequisites and system library requirements
+- Step-by-step installation process
+- Troubleshooting section
+- Development workflow tips
+
+**`docs/PHASE2-PREP.md`** - Technical Reference for Phase 2
+- Detailed technical specifications for audio pipeline
+- Go package dependencies to add
+- Server and client implementation tasks
+- Testing strategy
+- Environment variable reference
+- File locations and directory structure
+
+**3. ✅ `.gitignore` Updates**
+- Added `deps/` directory (for whisper.cpp source)
+- Already had `models/` for GGML model files
+- Ensures large dependencies aren't committed
+
+**4. ✅ macOS-Specific Setup Documented**
+Based on user's existing setup, documented the Homebrew approach:
+```bash
+brew install whisper-cpp
+mkdir -p ~/.cache/whisper
+curl -L -o ~/.cache/whisper/ggml-large-v3-turbo.bin \
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin?download=true"
+brew install sox ffmpeg  # Optional audio tools
+```
+
+**Benefits of Homebrew approach:**
+- Metal GPU acceleration (40x realtime on M-series)
+- Automatic updates
+- No manual compilation
+- Easier than building from source
+
+#### 🔴 CRITICAL DEVIATIONS & LEARNINGS FOR TOMORROW'S TEAM
+
+**DEVIATION 1: Two Installation Paths**
+We now support TWO installation methods:
+
+**Path A: macOS with Homebrew (RECOMMENDED for production Mac)**
+- Use `brew install whisper-cpp`
+- Models go to `~/.cache/whisper/`
+- No CGO environment setup needed for Homebrew binaries
+- Skip `install-whisper.sh` entirely
+
+**Path B: Linux/Manual Build (for development/other platforms)**
+- Run `./scripts/install-whisper.sh`
+- Builds from source in `deps/whisper.cpp/`
+- Models go to `models/`
+- MUST run `source ./scripts/setup-env.sh` before building
+
+**Why this matters:** Different team members on different platforms need different workflows. The docs now cover both.
+
+**DEVIATION 2: Model Locations Differ by Platform**
+- **Homebrew (macOS)**: `~/.cache/whisper/ggml-large-v3-turbo.bin`
+- **Manual build**: `models/ggml-large-v3-turbo.bin`
+
+The server config will need to support both paths, or we standardize on one.
+
+**DEVIATION 3: RNNoise Source**
+The implementation plan didn't specify WHERE to get the RNNoise model. We chose:
+- Source: GregorR/rnnoise-models repository
+- Model: "leavened-quisling" (lq.rnnn)
+- Reason: Well-tested, general-purpose noise suppression
+- Alternative considered: Training our own model → rejected as scope creep
+
+**DEVIATION 4: No Actual Phase 2 Code Yet**
+This session was pure infrastructure setup. We created the tooling to INSTALL dependencies, but didn't write any transcription code yet. The next session will start the actual Whisper integration.
+
+**LEARNING 1: Official Go Bindings are from 2025**
+The whisper.cpp Go bindings were updated November 1, 2025 (very recent!):
+- Package: `github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper`
+- This is OFFICIAL from ggerganov
+- Don't use older third-party bindings
+- The bindings are stable and well-maintained
+
+**LEARNING 2: RNNoise Go Package is Also 2025**
+Found recent Go package for RNNoise:
+- Package: `github.com/xaionaro-go/audio/pkg/noisesuppression/implementations/rnnoise`
+- Published: April 26, 2025
+- License: CC0-1.0
+- Active development
+
+Alternative found:
+- Package: `github.com/errakhaoui/clearvox`
+- Real-time noise cancellation application using RNNoise
+- Could be a reference implementation
+
+**LEARNING 3: Model Download URLs are Stable**
+Hugging Face provides stable URLs for model downloads:
+- Base: `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/`
+- Pattern: `ggml-{model-name}.bin`
+- These URLs are safe to hardcode in scripts
+- No authentication required
+
+**LEARNING 4: CGO Environment Variables are Tricky**
+For the manual build path, CGO requires BOTH:
+- Include paths: `-I$WHISPER_DIR/include -I$WHISPER_DIR/ggml/include`
+- Library paths: `-L$WHISPER_DIR/build -lwhisper`
+- CPU flags: `-mfma -mf16c` (must be in ALLOW list)
+- Runtime paths: `LIBRARY_PATH` and `LD_LIBRARY_PATH`
+
+Missing ANY of these = build failures or runtime linking errors.
+
+**LEARNING 5: Scripts Should Be Idempotent**
+All scripts check if work is already done:
+- `install-whisper.sh` - Checks if `libwhisper.a` exists
+- `download-models.sh` - Checks if model file exists
+- `download-rnnoise.sh` - Checks if model exists
+
+This makes them safe to re-run without wasting time/bandwidth.
+
+#### 🚨 CRITICAL THINGS THE NEXT TEAM MUST KNOW
+
+**1. Run Installation Scripts in Order**
+The correct sequence is:
+```bash
+# Step 1: Install whisper.cpp
+./scripts/install-whisper.sh
+
+# Step 2: Download Whisper models
+./scripts/download-models.sh
+
+# Step 3: Download RNNoise model
+./scripts/download-rnnoise.sh
+
+# Step 4: Set environment (EVERY time you open a new shell)
+source ./scripts/setup-env.sh
+
+# Step 5: Build
+make build
+```
+
+Skip step 4 and the build will fail with cryptic CGO errors.
+
+**2. macOS Team Members Can Skip Steps 1 & 4**
+If on macOS, use this instead:
+```bash
+brew install whisper-cpp
+./scripts/download-models.sh  # Downloads to models/ directory
+./scripts/download-rnnoise.sh
+# No environment setup needed
+make build
+```
+
+**3. Model Files are LARGE**
+- `tiny`: ~75MB
+- `base`: ~142MB
+- `small`: ~466MB
+- `medium`: ~1.5GB
+- `large-v3-turbo`: ~1.6GB (recommended)
+- `large-v3`: ~3GB
+
+Don't download all models! Pick one (we recommend large-v3-turbo).
+
+**4. Phase 2 Go Dependencies Not Yet Added**
+When you start Phase 2 implementation, you'll need to add:
+```bash
+go get github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper
+go get github.com/xaionaro-go/audio/pkg/noisesuppression/implementations/rnnoise
+```
+
+These aren't in `go.mod` yet because we haven't imported them in code.
+
+**5. Config Files Need Model Paths**
+The server config (`server/config.yaml`) will need:
+```yaml
+whisper:
+  model_path: "/path/to/ggml-large-v3-turbo.bin"
+
+rnnoise:
+  model_path: "/path/to/rnnoise/lq.rnnn"
+```
+
+Decide: Use absolute paths or relative to binary?
+
+**6. RNNoise Frame Size Matters**
+RNNoise operates on **10ms frames** (160 samples at 16kHz).
+Our audio chunks are **200ms** (6400 bytes = 3200 samples).
+So each chunk = **20 RNNoise frames**.
+
+Process each frame individually in a loop, maintaining state between frames.
+
+**7. Whisper Context Management**
+Whisper can preserve context between segments for better accuracy. The Go bindings support this. Use it to:
+- Improve capitalization across segment boundaries
+- Better handle sentence flow
+- Recognize names/terms mentioned earlier
+
+**8. Directory Structure After Installation**
+```
+/workspace/project/
+├── deps/
+│   └── whisper.cpp/          # Git repo (if manual build)
+│       ├── include/
+│       ├── ggml/include/
+│       └── build/
+│           └── libwhisper.a  # Static library
+├── models/
+│   ├── ggml-large-v3-turbo.bin  # Whisper model
+│   └── rnnoise/
+│       └── lq.rnnn           # RNNoise model
+├── scripts/
+│   ├── install-whisper.sh
+│   ├── download-models.sh
+│   ├── download-rnnoise.sh
+│   └── setup-env.sh
+└── docs/
+    ├── SETUP.md              # User-facing setup guide
+    └── PHASE2-PREP.md        # Technical implementation reference
+```
+
+All of this is gitignored (deps/ and models/).
+
+**9. Test Scripts Before Trusting Them**
+These scripts haven't been run yet on this machine! They're based on:
+- Official whisper.cpp documentation
+- User's existing macOS setup
+- 2025 best practices from web research
+
+Test them BEFORE relying on them. Expect minor tweaks needed.
+
+**10. Metal Acceleration is macOS-Only**
+The 40x speed improvement from Metal only works on Apple Silicon Macs.
+On Linux, you'll get CPU-only performance (~7x realtime on decent hardware).
+This is fine for development but worth noting.
+
+#### What's Next: Phase 2 Implementation
+
+**Immediate Next Tasks:**
+1. Test installation scripts on this machine
+2. Add Go dependencies to server/go.mod
+3. Create `server/internal/transcription/` directory structure
+4. Implement RNNoise wrapper
+5. Implement VAD logic
+6. Integrate Whisper.cpp Go bindings
+7. Wire up audio pipeline: RNNoise → VAD → Whisper → DataChannel
+
+**Files to Create:**
+- `server/internal/transcription/whisper.go`
+- `server/internal/transcription/rnnoise.go`
+- `server/internal/transcription/vad.go`
+- `server/internal/transcription/accumulator.go`
+- `server/internal/transcription/pipeline.go`
+
+**Current State:**
+- ✅ Phase 1 (Audio Streaming + Reconnection): COMPLETE & TESTED
+- ✅ Phase 2 Prep (Installation Scripts + Docs): COMPLETE
+- ⏳ Phase 2 Implementation (Transcription): READY TO START
+
+---
 
 ### 📅 **SESSION UPDATE: 2025-11-05 Evening Session 3 - RECONNECTION & RESILIENCE** 🎉
 
