@@ -12,17 +12,17 @@ if [ ! -d "$WHISPER_DIR" ]; then
     return 1
 fi
 
-if [ ! -f "$WHISPER_DIR/build/libwhisper.a" ]; then
+if [ ! -f "$WHISPER_DIR/build/src/libwhisper.a" ]; then
     echo "❌ libwhisper.a not found. Run ./scripts/install-whisper.sh first"
     return 1
 fi
 
 # Set CGO environment variables for whisper.cpp
 export CGO_CFLAGS="-I$WHISPER_DIR/include -I$WHISPER_DIR/ggml/include"
-export CGO_LDFLAGS="-L$WHISPER_DIR/build -lwhisper"
+export CGO_LDFLAGS="-L$WHISPER_DIR/build/src -L$WHISPER_DIR/build/ggml/src -lwhisper -lggml -lggml-base -lggml-cpu -lstdc++ -lm"
 export CGO_CFLAGS_ALLOW="-mfma|-mf16c"
-export LIBRARY_PATH="$WHISPER_DIR/build:${LIBRARY_PATH}"
-export LD_LIBRARY_PATH="$WHISPER_DIR/build:${LD_LIBRARY_PATH}"
+export LIBRARY_PATH="$WHISPER_DIR/build/src:$WHISPER_DIR/build/ggml/src:${LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$WHISPER_DIR/build/src:$WHISPER_DIR/build/ggml/src:${LD_LIBRARY_PATH}"
 
 echo "✅ Environment configured for whisper.cpp"
 echo "CGO_CFLAGS=$CGO_CFLAGS"

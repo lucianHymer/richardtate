@@ -38,14 +38,14 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
 cmake --build . -j $(nproc) --config Release
 
 # Verify library was built
-if [ ! -f "$WHISPER_DIR/build/libwhisper.a" ]; then
+if [ ! -f "$WHISPER_DIR/build/src/libwhisper.a" ]; then
     echo "❌ Failed to build libwhisper.a"
     exit 1
 fi
 echo "✓ libwhisper.a built successfully"
 
 # Create symlink for easy access
-ln -sf "$WHISPER_DIR/build/libwhisper.a" "$DEPS_DIR/libwhisper.a"
+ln -sf "$WHISPER_DIR/build/src/libwhisper.a" "$DEPS_DIR/libwhisper.a"
 
 echo ""
 echo "✅ Whisper.cpp installation complete!"
@@ -54,6 +54,6 @@ echo "📦 Next steps:"
 echo "1. Download models with: ./scripts/download-models.sh"
 echo "2. Set environment variables before building server:"
 echo "   export CGO_CFLAGS=\"-I$WHISPER_DIR/include -I$WHISPER_DIR/ggml/include\""
-echo "   export CGO_LDFLAGS=\"-L$WHISPER_DIR/build -lwhisper\""
-echo "   export LIBRARY_PATH=\"$WHISPER_DIR/build:\$LIBRARY_PATH\""
+echo "   export CGO_LDFLAGS=\"-L$WHISPER_DIR/build/src -lwhisper\""
+echo "   export LIBRARY_PATH=\"$WHISPER_DIR/build/src:\$LIBRARY_PATH\""
 echo ""

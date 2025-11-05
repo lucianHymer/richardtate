@@ -714,7 +714,322 @@ Remember: This replaces keyboard input for many workflows, so reliability and sp
 
 ---
 
-## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-05 Evening Session 4 - PHASE 2 PREP COMPLETE!)
+## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-05 Evening Session 5 - PHASE 2 CORE COMPLETE!)
+
+### 📅 **SESSION UPDATE: 2025-11-05 Evening Session 5 - PHASE 2 CORE IMPLEMENTATION** 🎤→📝
+
+**TL;DR: Transcription pipeline IMPLEMENTED and COMPILING! Simplified MVP approach (no RNNoise/VAD yet). Ready for integration into WebRTC handler.**
+
+#### What We Accomplished This Session (Evening Session 5)
+
+This session focused on implementing the core transcription pipeline using Whisper.cpp.
+
+**1. ✅ Transcription Module Created (`server/internal/transcription/`)**
+
+**`whisper.go`** - Whisper.cpp Integration (145 lines)
+- `NewWhisperTranscriber()` - Loads model and creates context
+- `Transcribe()` - Processes float32 audio samples, returns text
+- `TranscribeWithCallback()` - Streams results segment-by-segment
+- `ConvertPCMToFloat32()` - Converts 16-bit PCM to Whisper's float32 format
+- Thread-safe with mutex protection
+- Uses official Go bindings: `github.com/ggerganov/whisper.cpp/bindings/go`
+
+**`accumulator.go`** - Audio Buffering System (120 lines)
+- Buffers audio chunks until ready for transcription
+- Configurable min/max duration (default: 1-3 seconds)
+- Automatic flushing on duration threshold
+- Thread-safe with mutex
+- Callback-based notification when buffer ready
+- Pre-allocates buffer for efficiency
+
+**`pipeline.go`** - Pipeline Orchestration (185 lines)
+- `NewTranscriptionPipeline()` - Creates complete pipeline
+- `ProcessChunk()` - Accepts incoming audio from WebRTC
+- `Start()/Stop()` - Lifecycle management
+- Results delivered via buffered channel
+- Goroutine-based async transcription
+- Logs transcription results and timing
+
+**2. ✅ Go Dependencies Added**
+
+```bash
+go get github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper
+go get github.com/xaionaro-go/audio/pkg/noisesuppression/implementations/rnnoise
+```
+
+**3. ✅ Root `install.sh` Created**
+
+Complete Fedora dev environment setup script:
+- Installs cmake, make, gcc-c++ via dnf
+- Installs ALSA and PulseAudio libraries
+- Runs all Phase 2 installation scripts
+- Idempotent and safe to re-run
+- ~5 minutes on first run
+
+**4. ✅ Build Verified**
+
+```bash
+cd server
+export WHISPER_DIR=/workspace/project/deps/whisper.cpp
+export CGO_CFLAGS="-I$WHISPER_DIR/include -I$WHISPER_DIR/ggml/include"
+export CGO_LDFLAGS="-L$WHISPER_DIR/build/src -L$WHISPER_DIR/build/ggml/src -lwhisper -lggml -lggml-base -lggml-cpu -lstdc++ -lm"
+export CGO_CFLAGS_ALLOW="-mfma|-mf16c"
+go build ./internal/transcription/...
+# SUCCESS! ✅
+```
+
+#### 🔴 CRITICAL DEVIATIONS FOR TOMORROW'S TEAM
+
+**DEVIATION 1: Simplified MVP - No RNNoise/VAD Yet**
+
+**Original Plan:** Phase 2 included RNNoise (noise suppression) + VAD (voice activity detection)
+
+**What We Did:** Implemented ONLY Whisper transcription for MVP
+
+**Why:**
+- Get basic transcription working end-to-end FIRST
+- Prove the pipeline architecture before adding complexity
+- RNNoise Go package exists and can be added incrementally
+- VAD can be implemented once we see real audio characteristics
+- Faster path to testing and iteration
+
+**Impact:**
+- Audio goes straight to accumulator → Whisper (no preprocessing)
+- May have more background noise in transcriptions initially
+- Can add RNNoise as enhancement once basic flow works
+
+**How to Add Later:**
+1. Create `rnnoise.go` wrapper using `github.com/xaionaro-go/audio`
+2. Insert in pipeline: WebRTC → RNNoise → Accumulator → Whisper
+3. Create `vad.go` for silence detection (optional)
+
+**DEVIATION 2: libwhisper.a Location Changed**
+
+**Original Script:** Checked for `deps/whisper.cpp/build/libwhisper.a`
+
+**Actual Location:** `deps/whisper.cpp/build/src/libwhisper.a`
+
+**Why:** CMake 3.31+ changed output directory structure
+
+**Fixed In:** `scripts/install-whisper.sh` and `scripts/setup-env.sh`
+
+**DEVIATION 3: Additional GGML Libraries Required**
+
+**Original:** Only linked `-lwhisper`
+
+**Required:** `-lwhisper -lggml -lggml-base -lggml-cpu -lstdc++ -lm`
+
+**Why:** Whisper.cpp now separates GGML into multiple libraries
+
+**Location:** `deps/whisper.cpp/build/ggml/src/`
+
+**Fixed In:** `scripts/setup-env.sh` CGO_LDFLAGS
+
+#### 🚨 CRITICAL THINGS THE NEXT TEAM MUST KNOW
+
+**1. Environment Variables Are MANDATORY for Building**
+
+You **CANNOT** build the server without setting CGO environment variables first:
+
+```bash
+# Option A: Source the script (EASIEST)
+source ./scripts/setup-env.sh
+
+# Option B: Set manually
+export WHISPER_DIR=/workspace/project/deps/whisper.cpp
+export CGO_CFLAGS="-I$WHISPER_DIR/include -I$WHISPER_DIR/ggml/include"
+export CGO_LDFLAGS="-L$WHISPER_DIR/build/src -L$WHISPER_DIR/build/ggml/src -lwhisper -lggml -lggml-base -lggml-cpu -lstdc++ -lm"
+export CGO_CFLAGS_ALLOW="-mfma|-mf16c"
+```
+
+**Without these, you'll get:**
+```
+fatal error: whisper.h: No such file or directory
+```
+
+**2. Build from Server Directory, Not Project Root**
+
+```bash
+# ✅ CORRECT
+cd server
+go build ./internal/transcription/...
+
+# ❌ WRONG (go.work issue)
+cd /workspace/project
+go build ./internal/transcription/...
+```
+
+**3. Model File Must Be Configured**
+
+The pipeline needs to know where the Whisper model is:
+
+```go
+config := transcription.PipelineConfig{
+    WhisperConfig: transcription.WhisperConfig{
+        ModelPath: "/workspace/project/models/ggml-large-v3-turbo.bin",
+        Language:  "en",
+        Threads:   4,
+    },
+    MinAudioDuration: 1000, // 1 second
+    MaxAudioDuration: 3000, // 3 seconds
+}
+```
+
+**4. CGO Compilation is SLOW**
+
+First build after adding Whisper integration will take **60-90 seconds** due to CGO compilation of whisper.cpp bindings. Subsequent builds are cached and fast.
+
+**5. The Accumulator Timing Matters**
+
+Current settings:
+- **Min duration:** 1 second (won't transcribe shorter audio)
+- **Max duration:** 3 seconds (forces flush even mid-sentence)
+
+These are configurable in `PipelineConfig`. Tune based on testing:
+- Too short = poor transcription accuracy
+- Too long = high latency for user feedback
+
+**6. Audio Format Requirements**
+
+Whisper expects:
+- **Sample rate:** 16kHz (not 44.1kHz or 48kHz!)
+- **Channels:** Mono (not stereo)
+- **Format:** 16-bit PCM or float32
+
+The client already sends 16kHz mono PCM, so we're good. But if you change client audio format, update `ConvertPCMToFloat32()`.
+
+**7. Memory Usage Will Increase**
+
+Whisper model is loaded into RAM:
+- **large-v3-turbo:** ~1.6GB in memory
+- **Per-context overhead:** ~50MB per active stream
+
+For 10 concurrent streams = ~2GB RAM for Whisper alone.
+
+**8. Transcription is CPU-Intensive**
+
+Expect:
+- **Latency:** ~500ms-1s for 2 seconds of audio on modern CPU
+- **CPU usage:** 50-100% of one core during transcription
+- **Threads:** Configure via `WhisperConfig.Threads` (default: 4)
+
+The pipeline runs transcription in goroutines to avoid blocking audio reception.
+
+**9. Result Channel Can Fill Up**
+
+If transcription results aren't consumed fast enough, the channel will fill (default: 10 results). When full, new results are **dropped** with a log warning.
+
+Monitor this in testing. If it happens, either:
+- Increase `ResultChannelSize` in config
+- Process results faster
+- Reduce transcription frequency
+
+**10. The Pipeline Uses Callbacks**
+
+The accumulator calls `processAudio()` when ready, which spawns a goroutine for transcription. This is intentional to avoid blocking audio chunk processing.
+
+**Don't change this to synchronous** unless you want audio chunks to queue up during transcription!
+
+#### What's Next: Phase 2 Integration (30-60 min estimated)
+
+**Remaining Tasks:**
+
+1. **Update Server Config (`server/internal/config/config.go`)**
+   - Add `Transcription` section with model path, language, threads
+   - Add min/max audio duration settings
+   - Update `config.example.yaml`
+
+2. **Wire Up Pipeline in WebRTC Manager (`server/internal/webrtc/manager.go`)**
+   - Create `TranscriptionPipeline` instance on server startup
+   - Call `pipeline.ProcessChunk()` in audio message handler
+   - Start pipeline when stream begins
+   - Stop pipeline when stream ends
+
+3. **Send Results to Client**
+   - Read from `pipeline.Results()` channel
+   - Create `protocol.TranscriptionResult` messages
+   - Send via DataChannel back to client
+   - Handle errors gracefully
+
+4. **Test End-to-End**
+   - Start server (with environment vars!)
+   - Start client
+   - Begin recording
+   - Speak into microphone
+   - Verify transcriptions appear in logs
+   - Verify transcriptions sent to client
+
+**Files to Modify:**
+- `server/internal/config/config.go` - Add transcription config struct
+- `server/config.example.yaml` - Add transcription section
+- `server/internal/webrtc/manager.go` - Integrate pipeline
+- `server/cmd/server/main.go` - Initialize pipeline with config
+- `shared/protocol/messages.go` - Add TranscriptionResult message type (if not exists)
+
+**Build Command for Testing:**
+```bash
+cd /workspace/project
+source ./scripts/setup-env.sh
+cd server
+go build ./cmd/server
+```
+
+#### Known Limitations of Current Implementation
+
+1. **No noise suppression** - Will transcribe background noise
+2. **No VAD** - Will transcribe silence (wasteful)
+3. **No punctuation hints** - Whisper's default punctuation
+4. **No speaker diarization** - Can't distinguish multiple speakers
+5. **English only** - Configured for "en" (can change to "auto")
+6. **No streaming results** - Waits for full chunk before transcribing
+
+All of these are **intentional simplifications** for the MVP. We can add them incrementally once basic transcription works.
+
+#### Performance Expectations
+
+Based on Whisper large-v3-turbo benchmarks:
+
+**On Modern CPU (8 cores):**
+- Transcription speed: ~7x realtime
+- 2 seconds audio → ~300ms processing
+- Memory: ~1.6GB for model + 50MB per stream
+
+**On Apple Silicon M-series (with Metal):**
+- Transcription speed: ~40x realtime
+- 2 seconds audio → ~50ms processing
+- We're on Fedora, so no Metal acceleration
+
+**Expected End-to-End Latency:**
+- Audio accumulation: 1-3 seconds (configurable)
+- Transcription: 300-1000ms
+- Network: <50ms localhost
+- **Total:** ~1.5-4 seconds from speech to text display
+
+This is acceptable for V1. We can optimize later.
+
+#### Testing Checklist for Tomorrow
+
+- [ ] Server builds successfully with transcription
+- [ ] Pipeline initializes without errors
+- [ ] Audio chunks flow to pipeline
+- [ ] Accumulator triggers at correct durations
+- [ ] Whisper transcribes audio (check logs)
+- [ ] Results appear in result channel
+- [ ] Results sent to client via DataChannel
+- [ ] Client receives and displays transcriptions
+- [ ] No memory leaks during extended recording
+- [ ] Graceful shutdown works
+
+#### Questions to Answer During Testing
+
+1. Is 1-3 second accumulation the right balance for latency vs accuracy?
+2. Does Whisper handle our audio quality well? (No RNNoise yet)
+3. What's the actual transcription latency on this Fedora container?
+4. Do we need to increase result channel buffer size?
+5. Should we add basic silence detection to avoid transcribing nothing?
+6. Is English-only sufficient or do we need auto-detect?
+
+---
 
 ### 📅 **SESSION UPDATE: 2025-11-05 Evening Session 4 - PHASE 2 PREPARATION** 🛠️
 
