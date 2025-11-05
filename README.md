@@ -1,6 +1,17 @@
 # Richardtate
 
-**Dictation for the discerning individual 🧐**
+<p align="center">
+    <i>
+		Dictation for the discerning individual.
+    </i>
+    <br><br>
+    <img
+        src="https://raw.githubusercontent.com/lucianHymer/richardtate/refs/heads/main/assets/logo.png"
+        width="320px"
+        alt="logo"
+    />
+</p>
+
 
 Real-time voice-to-text transcription that streams your spoken words directly into any application.
 
