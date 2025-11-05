@@ -11,6 +11,7 @@ import (
 	"github.com/yourusername/streaming-transcription/server/internal/api"
 	"github.com/yourusername/streaming-transcription/server/internal/config"
 	"github.com/yourusername/streaming-transcription/server/internal/logger"
+	"github.com/yourusername/streaming-transcription/server/internal/transcription"
 	webrtcmgr "github.com/yourusername/streaming-transcription/server/internal/webrtc"
 )
 
@@ -44,8 +45,27 @@ func main() {
 		})
 	}
 
+	// Initialize transcription pipeline
+	pipelineConfig := transcription.PipelineConfig{
+		WhisperConfig: transcription.WhisperConfig{
+			ModelPath: cfg.Transcription.ModelPath,
+			Language:  cfg.Transcription.Language,
+			Threads:   uint(cfg.Transcription.Threads),
+		},
+		MinAudioDuration:  1000, // 1 second
+		MaxAudioDuration:  3000, // 3 seconds
+		ResultChannelSize: 10,
+	}
+
+	pipeline, err := transcription.NewTranscriptionPipeline(pipelineConfig)
+	if err != nil {
+		log.Fatal("Failed to initialize transcription pipeline: %v", err)
+	}
+	defer pipeline.Close()
+	log.Info("Transcription pipeline initialized with model: %s", cfg.Transcription.ModelPath)
+
 	// Create WebRTC manager
-	webrtcManager := webrtcmgr.New(log, iceServers)
+	webrtcManager := webrtcmgr.New(log, iceServers, pipeline)
 	log.Info("WebRTC manager initialized with %d ICE servers", len(iceServers))
 
 	// Create API server

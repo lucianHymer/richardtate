@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/yourusername/streaming-transcription/server/internal/logger"
+	"github.com/yourusername/streaming-transcription/server/internal/transcription"
 	"github.com/yourusername/streaming-transcription/server/internal/webrtc"
 	"github.com/yourusername/streaming-transcription/shared/protocol"
 )
@@ -189,17 +190,92 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 		s.logger.Debug("Received audio chunk: seq=%d, size=%d bytes",
 			audioData.SequenceID, len(audioData.Data))
 
-		// TODO: Pass to transcription service (Phase 2)
+		// Pass to transcription pipeline
+		pipeline := s.webrtcManager.GetPipeline()
+		if pipeline != nil && pipeline.IsActive() {
+			if err := pipeline.ProcessChunk(audioData.Data, msg.Timestamp); err != nil {
+				s.logger.Error("Failed to process audio chunk: %v", err)
+			}
+		}
 
 	case protocol.MessageTypeControlStart:
-		s.logger.Info("Received start command")
-		// TODO: Start transcription
+		s.logger.Info("Received start command from peer %s", peerID)
+
+		// Start transcription pipeline
+		pipeline := s.webrtcManager.GetPipeline()
+		if pipeline != nil {
+			if err := pipeline.Start(); err != nil {
+				s.logger.Error("Failed to start pipeline: %v", err)
+			} else {
+				s.logger.Info("Transcription pipeline started for peer %s", peerID)
+
+				// Start result sender goroutine
+				go s.sendTranscriptionResults(peerID, peer, pipeline)
+			}
+		}
 
 	case protocol.MessageTypeControlStop:
-		s.logger.Info("Received stop command")
-		// TODO: Stop transcription
+		s.logger.Info("Received stop command from peer %s", peerID)
+
+		// Stop transcription pipeline
+		pipeline := s.webrtcManager.GetPipeline()
+		if pipeline != nil {
+			if err := pipeline.Stop(); err != nil {
+				s.logger.Error("Failed to stop pipeline: %v", err)
+			} else {
+				s.logger.Info("Transcription pipeline stopped for peer %s", peerID)
+			}
+		}
 
 	default:
 		s.logger.Warn("Unknown message type: %s", msg.Type)
 	}
+}
+
+// sendTranscriptionResults reads from the pipeline results and sends them to the client
+func (s *Server) sendTranscriptionResults(peerID string, peer *webrtc.PeerConnection, pipeline *transcription.TranscriptionPipeline) {
+	s.logger.Info("Starting transcription result sender for peer %s", peerID)
+
+	for result := range pipeline.Results() {
+		// Check if there was an error
+		if result.Error != nil {
+			s.logger.Error("Transcription error: %v", result.Error)
+			continue
+		}
+
+		// Skip empty transcriptions
+		if result.Text == "" {
+			continue
+		}
+
+		s.logger.Info("Transcription result: %q", result.Text)
+
+		// Create transcription message
+		transcriptData := protocol.TranscriptData{
+			Text:    result.Text,
+			IsFinal: true,
+		}
+
+		transcriptJSON, err := json.Marshal(transcriptData)
+		if err != nil {
+			s.logger.Error("Failed to marshal transcript data: %v", err)
+			continue
+		}
+
+		msg := &protocol.Message{
+			Type:      protocol.MessageTypeTranscriptFinal,
+			Timestamp: result.Timestamp,
+			Data:      transcriptJSON,
+		}
+
+		// Send to client
+		if err := peer.SendMessage(msg); err != nil {
+			s.logger.Error("Failed to send transcription to peer %s: %v", peerID, err)
+			break
+		}
+
+		s.logger.Debug("Sent transcription to peer %s: %q", peerID, result.Text)
+	}
+
+	s.logger.Info("Transcription result sender stopped for peer %s", peerID)
 }

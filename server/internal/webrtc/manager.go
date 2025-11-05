@@ -7,6 +7,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 	"github.com/yourusername/streaming-transcription/server/internal/logger"
+	"github.com/yourusername/streaming-transcription/server/internal/transcription"
 	"github.com/yourusername/streaming-transcription/shared/protocol"
 )
 
@@ -16,6 +17,7 @@ type Manager struct {
 	peerConns   map[string]*PeerConnection
 	peerConnsMu sync.RWMutex
 	config      webrtc.Configuration
+	pipeline    *transcription.TranscriptionPipeline
 }
 
 // PeerConnection represents a single WebRTC peer connection
@@ -28,7 +30,7 @@ type PeerConnection struct {
 }
 
 // New creates a new WebRTC manager
-func New(log *logger.Logger, iceServers []webrtc.ICEServer) *Manager {
+func New(log *logger.Logger, iceServers []webrtc.ICEServer, pipeline *transcription.TranscriptionPipeline) *Manager {
 	config := webrtc.Configuration{
 		ICEServers: iceServers,
 	}
@@ -37,7 +39,13 @@ func New(log *logger.Logger, iceServers []webrtc.ICEServer) *Manager {
 		logger:    log.With("webrtc"),
 		peerConns: make(map[string]*PeerConnection),
 		config:    config,
+		pipeline:  pipeline,
 	}
+}
+
+// GetPipeline returns the transcription pipeline
+func (m *Manager) GetPipeline() *transcription.TranscriptionPipeline {
+	return m.pipeline
 }
 
 // CreatePeerConnection creates a new peer connection

@@ -44,3 +44,4 @@ deps/
 # Build artifacts
 dist/
 build/
+server/config.yaml
