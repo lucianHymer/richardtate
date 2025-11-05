@@ -1,14 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/yourusername/streaming-transcription/client/internal/api"
+	"github.com/yourusername/streaming-transcription/client/internal/audio"
 	"github.com/yourusername/streaming-transcription/client/internal/config"
 	"github.com/yourusername/streaming-transcription/client/internal/logger"
 	"github.com/yourusername/streaming-transcription/client/internal/webrtc"
@@ -72,17 +75,63 @@ func main() {
 		log.Info("Ping sent successfully")
 	}
 
+	// Create audio capturer
+	capturer, err := audio.New(20) // Buffer up to 20 chunks (4 seconds at 200ms/chunk)
+	if err != nil {
+		log.Fatal("Failed to create audio capturer: %v", err)
+	}
+	defer capturer.Close()
+
+	// Goroutine to send audio chunks to server
+	var audioWg sync.WaitGroup
+	audioWg.Add(1)
+	go func() {
+		defer audioWg.Done()
+		for chunk := range capturer.Chunks() {
+			// Convert audio chunk to protocol message
+			audioData := protocol.AudioChunkData{
+				Data:       chunk.Data,
+				SampleRate: chunk.SampleRate,
+				Channels:   chunk.Channels,
+				SequenceID: chunk.SequenceID,
+			}
+
+			// Marshal to JSON
+			data, err := json.Marshal(audioData)
+			if err != nil {
+				log.Error("Failed to marshal audio chunk: %v", err)
+				continue
+			}
+
+			// Send via WebRTC
+			if err := webrtcClient.SendAudioChunk(data, chunk.SampleRate, chunk.Channels); err != nil {
+				log.Error("Failed to send audio chunk: %v", err)
+			} else {
+				log.Debug("Sent audio chunk: seq=%d, size=%d bytes", chunk.SequenceID, len(chunk.Data))
+			}
+		}
+		log.Info("Audio sending goroutine stopped")
+	}()
+
 	// Create API server for control
 	apiServer := api.New(cfg.Client.APIBindAddress, log)
 	apiServer.SetHandlers(
 		func() error {
 			log.Info("Start recording requested")
-			// TODO: Start audio capture
+			if err := capturer.Start(); err != nil {
+				log.Error("Failed to start audio capture: %v", err)
+				return err
+			}
+			log.Info("Audio capture started")
 			return nil
 		},
 		func() error {
 			log.Info("Stop recording requested")
-			// TODO: Stop audio capture
+			if err := capturer.Stop(); err != nil {
+				log.Error("Failed to stop audio capture: %v", err)
+				return err
+			}
+			log.Info("Audio capture stopped")
 			return nil
 		},
 	)
@@ -108,6 +157,15 @@ func main() {
 	if err := apiServer.Stop(); err != nil {
 		log.Error("Error stopping API server: %v", err)
 	}
+
+	// Stop audio capture (this closes the chunks channel)
+	if err := capturer.Close(); err != nil {
+		log.Error("Error closing audio capturer: %v", err)
+	}
+
+	// Wait for audio goroutine to finish
+	log.Info("Waiting for audio goroutine to finish...")
+	audioWg.Wait()
 
 	if err := webrtcClient.Close(); err != nil {
 		log.Error("Error closing WebRTC client: %v", err)
