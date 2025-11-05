@@ -1,0 +1,43 @@
+# Client configuration
+client:
+  # HTTP control API bind address
+  api_bind_address: "localhost:8081"
+
+  # Enable debug logging
+  debug: true
+
+  # Debug log file path
+  debug_log_path: "./debug.log"
+
+  # Debug log max size in bytes (8MB)
+  debug_log_max_size: 8388608
+
+# Server connection
+server:
+  # WebSocket URL for signaling
+  # For localhost: "ws://localhost:8080"
+  # For LAN: "ws://192.168.1.100:8080"
+  # mDNS support can be added later
+  url: "ws://localhost:8080"
+
+  # Connection retry configuration
+  reconnect_delay_ms: 1000
+  max_reconnect_delay_ms: 30000
+  reconnect_backoff_multiplier: 2.0
+
+# Audio capture configuration
+audio:
+  # Sample rate (Hz)
+  sample_rate: 16000
+
+  # Channels (1 = mono)
+  channels: 1
+
+  # Bits per sample
+  bits_per_sample: 16
+
+  # Chunk duration in milliseconds
+  chunk_duration_ms: 150
+
+  # Device name (empty = default device)
+  device_name: ""

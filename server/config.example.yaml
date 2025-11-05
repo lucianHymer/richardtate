@@ -1,0 +1,42 @@
+# Server configuration
+server:
+  # HTTP server bind address (use "localhost:8080" for local only, "0.0.0.0:8080" for LAN access)
+  bind_address: "localhost:8080"
+
+  # Enable debug logging
+  debug: true
+
+# WebRTC configuration
+webrtc:
+  # ICE servers for connection establishment
+  # For localhost testing, this can be empty
+  # For LAN/remote clients, configure STUN/TURN servers
+  ice_servers: []
+  # Example:
+  # ice_servers:
+  #   - urls: ["stun:stun.l.google.com:19302"]
+
+# Transcription configuration
+transcription:
+  # Whisper model path (relative to server binary or absolute)
+  model_path: "./models/ggml-large-v3-turbo.bin"
+
+  # Language (leave empty for auto-detect)
+  language: ""
+
+  # Enable translation to English
+  translate: false
+
+  # Number of threads (0 = auto-detect)
+  threads: 0
+
+  # Use GPU if available (Metal on Mac, CUDA on Linux with GPU)
+  use_gpu: true
+
+# Noise suppression
+noise_suppression:
+  # Enable RNNoise
+  enabled: false
+
+  # RNNoise model path (optional, uses default if not specified)
+  model_path: ""

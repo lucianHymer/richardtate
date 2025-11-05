@@ -1,0 +1,43 @@
+# Binaries
+/server/cmd/server/server
+/client/cmd/client/client
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Go workspace file
+go.work.sum
+
+# Dependencies
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+debug.log
+
+# Config (optional - might want to track template)
+config.local.yaml
+
+# Whisper models
+*.bin
+models/
+
+# Build artifacts
+dist/
+build/
