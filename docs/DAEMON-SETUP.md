@@ -4,7 +4,7 @@ This document explains how the Richard Tate services run as background daemons o
 
 ## Overview
 
-After running `scripts/install-mac.sh`, both the server and client are installed as **user launchd services** that:
+After running `scripts/build-mac.sh` and setting up daemon services, both the server and client are installed as **user launchd services** that:
 
 - Run in the background automatically
 - Start on login (via `RunAtLoad`)
@@ -181,7 +181,7 @@ sudo rm /usr/local/bin/richardtate
 
 ### Installation Process
 
-1. `install-mac.sh` builds the binaries
+1. `build-mac.sh` builds the binaries and optionally sets up daemons
 2. Template plists are processed with `sed` to replace:
    - `PROJECT_ROOT` → actual project path
    - `HOME` → user's home directory
@@ -235,7 +235,7 @@ cd /path/to/project/client
 ### After (Daemon)
 ```bash
 # One-time setup
-scripts/install-mac.sh
+scripts/build-mac.sh
 
 # Then forget about it - services run in background
 # Auto-start on login

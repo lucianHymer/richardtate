@@ -47,14 +47,28 @@ if [ -d "$LOCAL_RNNOISE/lib" ] && [ -f "$LOCAL_RNNOISE/lib/librnnoise.so" -o -f 
     ENABLE_RNNOISE=true
     RNNOISE_PREFIX="$LOCAL_RNNOISE"
 else
-    echo "⚠️  rnnoise not installed - building WITHOUT noise suppression"
+    echo "⚠️  rnnoise not installed"
     echo ""
-    echo "To enable RNNoise (recommended for noisy environments on macOS):"
-    echo "  Run: ./scripts/install-rnnoise-lib.sh"
-    echo "  Then re-run this script"
-    echo ""
+    echo "RNNoise provides neural noise suppression (recommended for noisy environments)."
     echo "Note: Do NOT use 'brew install rnnoise' - it installs the wrong package."
     echo ""
+    read -p "Would you like to install RNNoise now? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "🔨 Installing RNNoise from source..."
+        "$SCRIPT_DIR/install-rnnoise-lib.sh"
+        if [ -d "$LOCAL_RNNOISE/lib" ]; then
+            echo "✅ RNNoise installed successfully!"
+            ENABLE_RNNOISE=true
+            RNNOISE_PREFIX="$LOCAL_RNNOISE"
+        else
+            echo "❌ RNNoise installation failed. Building without noise suppression."
+        fi
+        echo ""
+    else
+        echo "Continuing without RNNoise (no noise suppression)."
+        echo ""
+    fi
 fi
 
 # Get whisper-cpp installation path
@@ -129,9 +143,69 @@ fi
 
 echo "✅ Build complete!"
 echo ""
-echo "To run:"
-echo "  1. Start server: ./server/cmd/server/server"
-echo "  2. Start client: ./client/cmd/client/client"
-echo "  3. Test recording: curl -X POST http://localhost:8081/start"
+
+# Ask about daemon setup
+echo "Would you like to set up background daemon services?"
+echo "This will:"
+echo "  - Install launchd services for server and client"
+echo "  - Auto-start services on login"
+echo "  - Auto-restart on crash"
+echo "  - Install 'richardtate' command for service control"
 echo ""
+read -p "Set up daemon services? (Y/n) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    echo "🔨 Setting up daemon services..."
+
+    # Create config and logs directories
+    CONFIG_DIR="$HOME/.config/richardtate"
+    LOGS_DIR="$CONFIG_DIR/logs"
+    mkdir -p "$CONFIG_DIR"
+    mkdir -p "$LOGS_DIR"
+
+    # Copy config files if they don't exist
+    if [ ! -f "$CONFIG_DIR/server.yaml" ]; then
+        cp "$PROJECT_ROOT/server/config.example.yaml" "$CONFIG_DIR/server.yaml"
+        echo "✅ Created server config at $CONFIG_DIR/server.yaml"
+    fi
+    if [ ! -f "$CONFIG_DIR/client.yaml" ]; then
+        cp "$PROJECT_ROOT/client/config.example.yaml" "$CONFIG_DIR/client.yaml"
+        echo "✅ Created client config at $CONFIG_DIR/client.yaml"
+    fi
+
+    # Install launchd plists
+    PLIST_DIR="$HOME/Library/LaunchAgents"
+    mkdir -p "$PLIST_DIR"
+
+    sed "s|PROJECT_ROOT|$PROJECT_ROOT|g; s|HOME|$HOME|g" \
+        "$SCRIPT_DIR/com.richardtate.server.plist" > "$PLIST_DIR/com.richardtate.server.plist"
+    echo "✅ Server service installed"
+
+    sed "s|PROJECT_ROOT|$PROJECT_ROOT|g; s|HOME|$HOME|g" \
+        "$SCRIPT_DIR/com.richardtate.client.plist" > "$PLIST_DIR/com.richardtate.client.plist"
+    echo "✅ Client service installed"
+
+    # Install control script
+    sudo cp "$SCRIPT_DIR/richardtate" /usr/local/bin/richardtate
+    sudo chmod +x /usr/local/bin/richardtate
+    echo "✅ Control script installed"
+
+    echo ""
+    echo "🎉 Daemon services configured!"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Calibrate VAD: cd $PROJECT_ROOT/client && ./client --calibrate"
+    echo "  2. Start services: richardtate start"
+    echo "  3. Check status:   richardtate status"
+    echo "  4. View logs:      richardtate logs"
+    echo ""
+else
+    echo ""
+    echo "To run manually:"
+    echo "  1. Start server: ./server/cmd/server/server"
+    echo "  2. Start client: ./client/cmd/client/client"
+    echo "  3. Test recording: curl -X POST http://localhost:8081/start"
+    echo ""
+fi
+
 echo "💡 With Metal GPU acceleration, expect ~40x realtime transcription speed!"

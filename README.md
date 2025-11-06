@@ -154,15 +154,14 @@ Total latency: **1-3 seconds** from speech to text (on Apple Silicon with Metal 
 ### Quick Start (One Command)
 
 ```bash
-./scripts/install-mac.sh
+./scripts/build-mac.sh
 ```
 
-This installs everything:
-- Whisper.cpp with Metal acceleration
-- Whisper large-v3-turbo model (~1.6GB)
-- RNNoise library and model
-- Creates `~/.config/richardtate/` directory
-- Builds client and server binaries
+This will:
+- Check for Homebrew and whisper-cpp (install with: `brew install whisper-cpp`)
+- Prompt to install RNNoise for noise suppression (optional)
+- Build client and server binaries
+- Optionally set up background daemon services
 
 ### Manual Installation
 
