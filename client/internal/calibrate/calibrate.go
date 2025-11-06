@@ -114,11 +114,40 @@ func (w *Wizard) Run(clientConfigPath string, autoSave bool) error {
 	fmt.Println("Step 3/3: Analysis")
 	visualizeComparison(backgroundStats, speechStats)
 
-	// Calculate recommended threshold (halfway between background ceiling and speech floor)
-	recommendedThreshold := (backgroundStats.P95 + speechStats.P5) / 2
+	// Calculate recommended threshold
+	// Research shows threshold should be above background noise with safety margin
+	// Common approaches:
+	// 1. background_p95 * 1.5 (50% margin)
+	// 2. background_p95 + (speech_avg - background_avg) * 0.3 (30% into the gap)
+	// We use approach 1 with a minimum of background_avg * 2 for very quiet environments
+	recommendedThreshold := backgroundStats.P95 * 1.5
+
+	// Safety check: ensure threshold is reasonable
+	minThreshold := backgroundStats.Avg * 2
+	if recommendedThreshold < minThreshold {
+		recommendedThreshold = minThreshold
+	}
 
 	fmt.Printf("\n  📊 Recommended threshold: %.0f\n", recommendedThreshold)
-	fmt.Printf("     (halfway between background max and speech min)\n\n")
+	fmt.Printf("     (background P95 × 1.5 for 50%% safety margin)\n")
+
+	// Show what this means
+	backgroundFramesAboveThreshold := 0
+	speechFramesAboveThreshold := 0
+	// Estimate based on percentiles
+	if recommendedThreshold > backgroundStats.P95 {
+		backgroundFramesAboveThreshold = 5 // ~5% above p95
+	} else {
+		backgroundFramesAboveThreshold = 50 // much higher
+	}
+	if recommendedThreshold < speechStats.P5 {
+		speechFramesAboveThreshold = 95 // ~95% above p5
+	} else {
+		speechFramesAboveThreshold = 50 // lower
+	}
+
+	fmt.Printf("     (~%d%% of background frames, ~%d%% of speech frames above threshold)\n\n",
+		backgroundFramesAboveThreshold, speechFramesAboveThreshold)
 
 	// Save to config
 	var serverConfigPath string
