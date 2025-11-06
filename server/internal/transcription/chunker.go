@@ -100,6 +100,7 @@ func (c *SmartChunker) ProcessSamples(samples []int16) {
 func (c *SmartChunker) checkAndChunk() {
 	bufferDuration := c.getBufferDuration()
 	shouldChunk := c.vad.ShouldChunk()
+	vadStats := c.vad.Stats()
 
 	// Safety: Always chunk if we hit max duration
 	if bufferDuration >= c.config.MaxChunkDuration {
@@ -107,8 +108,12 @@ func (c *SmartChunker) checkAndChunk() {
 		return
 	}
 
-	// Check if VAD detected sufficient silence AND we have enough audio
-	if shouldChunk && bufferDuration >= c.config.MinChunkDuration {
+	// Check if VAD detected sufficient silence AND we have enough audio AND enough actual speech
+	// This prevents sending chunks that are mostly silence/noise to Whisper (reduces hallucinations)
+	minSpeechDuration := 1 * time.Second // Require at least 1 second of actual speech
+	if shouldChunk &&
+	   bufferDuration >= c.config.MinChunkDuration &&
+	   vadStats.SpeechDuration >= minSpeechDuration {
 		c.flushChunk()
 		return
 	}

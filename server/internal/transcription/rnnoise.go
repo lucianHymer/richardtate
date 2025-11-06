@@ -1,51 +1,54 @@
+// +build !rnnoise
+
 package transcription
 
+// This file is used when building WITHOUT the rnnoise build tag
+// It provides a pass-through implementation
+
 const (
-	// RNNoise operates on 10ms frames
-	TargetSampleRate   = 16000 // Our audio is 16kHz
-	TargetFrameSamples = 160   // 10ms at 16kHz
+	// RNNoise operates on 48kHz audio (but pass-through here)
+	RNNoiseSampleRate = 48000
+	// Our pipeline uses 16kHz
+	PipelineSampleRate = 16000
+	// RNNoise frame size: 10ms at 48kHz = 480 samples
+	RNNoiseFrameSize = 480
 )
 
 // RNNoiseProcessor handles noise suppression using RNNoise
-// Currently a pass-through implementation (no actual denoising)
-// TODO: Integrate actual RNNoise when CGO build environment is set up
+// THIS IS THE PASS-THROUGH VERSION (no actual denoising)
 type RNNoiseProcessor struct {
-	buffer []int16 // Buffer for incomplete frames
+	// Empty struct - pass-through implementation
 }
 
-// NewRNNoiseProcessor creates a new RNNoise processor
+// NewRNNoiseProcessor creates a new RNNoise processor (pass-through)
 func NewRNNoiseProcessor(modelPath string) (*RNNoiseProcessor, error) {
 	// Pass-through implementation (no actual denoising)
-	return &RNNoiseProcessor{
-		buffer: make([]int16, 0, TargetFrameSamples),
-	}, nil
+	return &RNNoiseProcessor{}, nil
 }
 
 // ProcessChunk processes an audio chunk through RNNoise
 // Input: 16-bit PCM samples at 16kHz
-// Output: Denoised 16-bit PCM samples at 16kHz
-// Currently: Pass-through (no actual denoising)
+// Output: Same samples (no processing in pass-through mode)
 func (r *RNNoiseProcessor) ProcessChunk(samples []int16) ([]int16, error) {
-	// Pass-through implementation - just return the input
+	// Pass-through - just return the input unchanged
 	return samples, nil
 }
 
 // ProcessBytes processes raw PCM byte data through RNNoise
 // Input: Raw PCM bytes (16-bit little-endian) at 16kHz
-// Output: Denoised PCM bytes
-// Currently: Pass-through (no actual denoising)
+// Output: Same bytes (no processing in pass-through mode)
 func (r *RNNoiseProcessor) ProcessBytes(pcmData []byte) ([]byte, error) {
-	// Pass-through implementation - just return the input
+	// Pass-through - just return the input unchanged
 	return pcmData, nil
 }
 
 // Flush processes any remaining buffered samples
 func (r *RNNoiseProcessor) Flush() []int16 {
-	// Pass-through - no buffering needed
+	// Pass-through - no buffering
 	return nil
 }
 
-// Reset clears the internal buffer
+// Reset clears the internal buffers
 func (r *RNNoiseProcessor) Reset() {
 	// Pass-through - nothing to reset
 }
