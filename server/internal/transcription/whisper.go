@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 // WhisperTranscriber handles audio transcription using Whisper.cpp

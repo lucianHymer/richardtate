@@ -3,7 +3,7 @@
 package transcription
 
 import (
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 // This file is used when building WITHOUT the rnnoise build tag

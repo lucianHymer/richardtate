@@ -1,6 +1,8 @@
 # Binaries
 /server/cmd/server/server
 /client/cmd/client/client
+client/client
+server/server
 *.exe
 *.exe~
 *.dll

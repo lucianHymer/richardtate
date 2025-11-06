@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 // SmartChunkerConfig holds configuration for VAD-based chunking

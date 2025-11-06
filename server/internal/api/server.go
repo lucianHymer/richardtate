@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
 	"github.com/lucianHymer/streaming-transcription/server/internal/webrtc"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lucianHymer/streaming-transcription/client/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 // Server handles the HTTP control API

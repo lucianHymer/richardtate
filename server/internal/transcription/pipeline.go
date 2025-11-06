@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 // TranscriptionPipeline handles the complete audio-to-text pipeline

@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/pion/webrtc/v4"
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )

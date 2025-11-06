@@ -110,3 +110,58 @@ This gives immediate visual feedback to users while keeping implementation simpl
 **Files**: client/cmd/client/main.go
 ---
 
+### [14:59] [architecture] Shared Logging System
+**Details**: Complete logging system refactoring to use shared structured logger.
+
+**Location**: shared/logger/logger.go (previously in server/internal/logger/)
+
+**Features**:
+- Log levels: Debug, Info, Warn, Error, Fatal
+- Output formats: Text (default), JSON configurable
+- Structured fields support via InfoWithFields(), DebugWithFields(), etc.
+- Component tagging via With("component") for contextual logging
+- Level filtering (debug mode on/off)
+- Thread-safe with mutex protection
+
+**Usage Pattern**:
+```go
+// Initialize logger
+log := logger.New(debugMode)
+
+// Create component logger
+componentLog := log.With("audio")
+
+// Basic logging
+componentLog.Info("Starting audio capture")
+componentLog.Debug("Processing chunk: seq=%d", seqID)
+componentLog.Warn("Buffer full, dropping chunk")
+componentLog.Error("Failed to connect: %v", err)
+
+// Structured logging with fields
+componentLog.InfoWithFields("Device configured", map[string]interface{}{
+    "sample_rate": 16000,
+    "channels": 1,
+    "format": "S16",
+})
+```
+
+**Component Tags Used**:
+- Server: "api", "webrtc", "Whisper", "Pipeline", "RNNoise", "SmartChunker"
+- Client: "webrtc", "api", "audio", "message"
+
+**Migration Complete**:
+- Removed server/internal/logger/
+- Removed client/internal/logger/
+- All server files updated to use shared/logger
+- All client files updated to use shared/logger
+- All fmt.Printf/println replaced with proper logger calls
+- Audio capture now uses structured logging with fields
+
+**Output Format**:
+Text: `2025/11/06 04:58:23.123456 [INFO] [component] message | key=value`
+JSON: `{"timestamp":"2025/11/06 04:58:23.123456","level":"INFO","component":"audio","message":"text","fields":{"key":"value"}}`
+
+**Build Impact**: None - both client and server build successfully
+**Files**: shared/logger/logger.go, client/cmd/client/main.go, client/internal/audio/capture.go, client/internal/webrtc/client.go, client/internal/api/server.go, server/cmd/server/main.go
+---
+

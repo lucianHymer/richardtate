@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gen2brain/malgo"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 const (
@@ -33,6 +34,7 @@ type Capturer struct {
 	deviceName string // Optional: specify device by name
 	isRunning  bool
 	mu         sync.Mutex
+	logger     *logger.ContextLogger
 
 	// Output channel for audio chunks
 	chunks chan AudioChunk
@@ -46,7 +48,8 @@ type Capturer struct {
 // New creates a new audio capturer
 // chunkBufferSize determines how many chunks can be queued (recommend 10-20)
 // deviceName specifies which device to use (empty = default)
-func New(chunkBufferSize int, deviceName string) (*Capturer, error) {
+// log is the logger to use for audio capture logs
+func New(chunkBufferSize int, deviceName string, log *logger.Logger) (*Capturer, error) {
 	// Calculate buffer size: 16kHz * 1 channel * 2 bytes/sample * 0.2 seconds
 	bytesPerChunk := SampleRate * Channels * (BitsPerSample / 8) * ChunkSizeMS / 1000
 
@@ -56,6 +59,7 @@ func New(chunkBufferSize int, deviceName string) (*Capturer, error) {
 		bufferSize: bytesPerChunk,
 		sequenceID: 0,
 		deviceName: deviceName,
+		logger:     log.With("audio"),
 	}
 
 	// Initialize malgo context
@@ -78,7 +82,7 @@ func (c *Capturer) Start() error {
 	}
 
 	// List available devices and find the requested one
-	fmt.Println("\n=== Available Audio Devices ===")
+	c.logger.Info("=== Available Audio Devices ===")
 	infos, err := c.ctx.Devices(malgo.Capture)
 	var selectedDeviceID malgo.DeviceID
 	foundDevice := false
@@ -86,21 +90,21 @@ func (c *Capturer) Start() error {
 	if err == nil {
 		for i, info := range infos {
 			isDefault := info.IsDefault != 0
-			fmt.Printf("[%d] %s", i, info.Name())
 			if isDefault {
-				fmt.Printf(" [DEFAULT]")
+				c.logger.Info("[%d] %s [DEFAULT]", i, info.Name())
+			} else {
+				c.logger.Info("[%d] %s", i, info.Name())
 			}
-			fmt.Println()
 
 			// Check if this is the device we want
 			if c.deviceName != "" && info.Name() == c.deviceName {
 				selectedDeviceID = info.ID
 				foundDevice = true
-				fmt.Printf("    ✅ SELECTED (matches config: %s)\n", c.deviceName)
+				c.logger.Info("    ✅ SELECTED (matches config: %s)", c.deviceName)
 			}
 		}
 	}
-	fmt.Println("================================\n")
+	c.logger.Info("================================")
 
 	// Configure capture device
 	deviceConfig := malgo.DefaultDeviceConfig(malgo.Capture)
@@ -108,11 +112,11 @@ func (c *Capturer) Start() error {
 	// Use specific device if found
 	if foundDevice {
 		deviceConfig.Capture.DeviceID = selectedDeviceID.Pointer()
-		fmt.Printf("Using specified device: %s\n", c.deviceName)
+		c.logger.Info("Using specified device: %s", c.deviceName)
 	} else if c.deviceName != "" {
-		fmt.Printf("⚠️  Warning: Device '%s' not found, using default\n", c.deviceName)
+		c.logger.Warn("Device '%s' not found, using default", c.deviceName)
 	} else {
-		fmt.Println("Using default audio device")
+		c.logger.Info("Using default audio device")
 	}
 
 	deviceConfig.Capture.Format = Format
@@ -120,8 +124,8 @@ func (c *Capturer) Start() error {
 	deviceConfig.SampleRate = SampleRate
 	deviceConfig.Alsa.NoMMap = 1 // Recommended for better compatibility
 
-	// Print the configuration we're using
-	fmt.Printf("Capture config: Format=%v, Channels=%d, SampleRate=%d\n\n",
+	// Log the configuration we're using
+	c.logger.Debug("Capture config: Format=%v, Channels=%d, SampleRate=%d",
 		deviceConfig.Capture.Format, deviceConfig.Capture.Channels, deviceConfig.SampleRate)
 
 	// Data callback - called by malgo when audio data is available
@@ -169,8 +173,13 @@ func (c *Capturer) Start() error {
 				}
 			}
 
-			fmt.Printf("🎤 Audio level: RMS²=%.0f, range=[%d to %d], frames=%d, bytes=%d\n",
-				rms, minSample, maxSample, framecount, len(pSample))
+			c.logger.DebugWithFields("🎤 Audio level detected", map[string]interface{}{
+				"rms_squared": rms,
+				"min_sample":  minSample,
+				"max_sample":  maxSample,
+				"frames":      framecount,
+				"bytes":       len(pSample),
+			})
 		}
 
 		// Append incoming data to buffer
@@ -196,8 +205,8 @@ func (c *Capturer) Start() error {
 			case c.chunks <- chunk:
 				c.sequenceID++
 			default:
-				// Buffer full - log warning (in production, use logger)
-				fmt.Printf("[WARN] Audio chunk buffer full, dropping chunk %d\n", c.sequenceID)
+				// Buffer full - log warning
+				c.logger.Warn("Audio chunk buffer full, dropping chunk %d", c.sequenceID)
 			}
 
 			// Remove sent data from buffer
@@ -215,16 +224,16 @@ func (c *Capturer) Start() error {
 	c.device = device
 
 	// Check what the device is ACTUALLY configured with
-	fmt.Println("\n🔍 Actual Device Configuration:")
-	fmt.Printf("   Sample Rate: %d Hz\n", c.device.SampleRate())
-	fmt.Printf("   Format: %v\n", c.device.CaptureFormat())
-	fmt.Printf("   Channels: %d\n", c.device.CaptureChannels())
-	fmt.Println()
+	c.logger.InfoWithFields("🔍 Actual Device Configuration", map[string]interface{}{
+		"sample_rate": c.device.SampleRate(),
+		"format":      c.device.CaptureFormat(),
+		"channels":    c.device.CaptureChannels(),
+	})
 
 	// Warn if sample rate doesn't match
 	if c.device.SampleRate() != SampleRate {
-		fmt.Printf("⚠️  WARNING: Device is using %d Hz, but we requested %d Hz!\n", c.device.SampleRate(), SampleRate)
-		fmt.Printf("⚠️  This will cause audio distortion. The device doesn't support 16kHz.\n\n")
+		c.logger.Warn("Device is using %d Hz, but we requested %d Hz - this will cause audio distortion",
+			c.device.SampleRate(), SampleRate)
 	}
 
 	// Start capture

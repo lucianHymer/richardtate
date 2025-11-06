@@ -11,7 +11,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/lucianHymer/streaming-transcription/server/internal/api"
 	"github.com/lucianHymer/streaming-transcription/server/internal/config"
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
 	webrtcmgr "github.com/lucianHymer/streaming-transcription/server/internal/webrtc"
 )

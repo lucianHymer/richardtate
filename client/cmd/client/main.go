@@ -14,8 +14,8 @@ import (
 	"github.com/lucianHymer/streaming-transcription/client/internal/api"
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
-	"github.com/lucianHymer/streaming-transcription/client/internal/logger"
 	"github.com/lucianHymer/streaming-transcription/client/internal/webrtc"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
 
@@ -35,11 +35,8 @@ func main() {
 	}
 
 	// Initialize logger
-	log, err := logger.New(cfg.Client.Debug, cfg.Client.DebugLogPath, cfg.Client.DebugLogMaxSize)
-	if err != nil {
-		panic(err)
-	}
-	defer log.Close()
+	log := logger.New(cfg.Client.Debug)
+	globalLog = log // Set global logger for message handler
 
 	log.Info("Starting streaming transcription client")
 	log.Info("Config: server_url=%s, api_bind_address=%s, debug=%v",
@@ -77,7 +74,7 @@ func main() {
 	}
 
 	// Create audio capturer
-	capturer, err := audio.New(20, cfg.Audio.DeviceName) // Buffer up to 20 chunks (4 seconds at 200ms/chunk)
+	capturer, err := audio.New(20, cfg.Audio.DeviceName, log) // Buffer up to 20 chunks (4 seconds at 200ms/chunk)
 	if err != nil {
 		log.Fatal("Failed to create audio capturer: %v", err)
 	}
@@ -183,17 +180,22 @@ func main() {
 	log.Info("Client stopped")
 }
 
+// Global logger for message handler (set in main)
+var globalLog *logger.Logger
+
 // handleDataChannelMessage handles messages received from the server
 func handleDataChannelMessage(msg *protocol.Message) {
+	messageLog := globalLog.With("message")
+
 	// This will be called when we receive messages from the server
 	switch msg.Type {
 	case protocol.MessageTypeControlPong:
-		println("✓ Received pong from server!")
+		messageLog.Info("✓ Received pong from server!")
 
 	case protocol.MessageTypeTranscriptPartial:
 		var transcript protocol.TranscriptData
 		if err := json.Unmarshal(msg.Data, &transcript); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to unmarshal partial transcript: %v\n", err)
+			messageLog.Error("Failed to unmarshal partial transcript: %v", err)
 			return
 		}
 		fmt.Printf("📝 [partial] %s\n", transcript.Text)
@@ -201,12 +203,12 @@ func handleDataChannelMessage(msg *protocol.Message) {
 	case protocol.MessageTypeTranscriptFinal:
 		var transcript protocol.TranscriptData
 		if err := json.Unmarshal(msg.Data, &transcript); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to unmarshal final transcript: %v\n", err)
+			messageLog.Error("Failed to unmarshal final transcript: %v", err)
 			return
 		}
 		fmt.Printf("✅ %s\n", transcript.Text)
 
 	default:
-		println("Received message type:", string(msg.Type))
+		messageLog.Debug("Received message type: %s", string(msg.Type))
 	}
 }

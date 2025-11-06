@@ -9,7 +9,7 @@ import (
 
 	"github.com/xaionaro-go/audio/pkg/audio"
 	"github.com/xaionaro-go/audio/pkg/noisesuppression/implementations/rnnoise"
-	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 const (
