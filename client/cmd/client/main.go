@@ -9,12 +9,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yourusername/streaming-transcription/client/internal/api"
-	"github.com/yourusername/streaming-transcription/client/internal/audio"
-	"github.com/yourusername/streaming-transcription/client/internal/config"
-	"github.com/yourusername/streaming-transcription/client/internal/logger"
-	"github.com/yourusername/streaming-transcription/client/internal/webrtc"
-	"github.com/yourusername/streaming-transcription/shared/protocol"
+	"github.com/lucianHymer/streaming-transcription/client/internal/api"
+	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
+	"github.com/lucianHymer/streaming-transcription/client/internal/config"
+	"github.com/lucianHymer/streaming-transcription/client/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/client/internal/webrtc"
+	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
 
 func main() {

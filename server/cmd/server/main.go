@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v4"
-	"github.com/yourusername/streaming-transcription/server/internal/api"
-	"github.com/yourusername/streaming-transcription/server/internal/config"
-	"github.com/yourusername/streaming-transcription/server/internal/logger"
-	"github.com/yourusername/streaming-transcription/server/internal/transcription"
-	webrtcmgr "github.com/yourusername/streaming-transcription/server/internal/webrtc"
+	"github.com/lucianHymer/streaming-transcription/server/internal/api"
+	"github.com/lucianHymer/streaming-transcription/server/internal/config"
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
+	webrtcmgr "github.com/lucianHymer/streaming-transcription/server/internal/webrtc"
 )
 
 func main() {
@@ -32,9 +32,28 @@ func main() {
 	}
 
 	// Initialize logger
-	log := logger.New(cfg.Server.Debug)
+	logLevel := logger.LevelInfo
+	if cfg.Server.LogLevel != "" {
+		logLevel = logger.ParseLogLevel(cfg.Server.LogLevel)
+	} else if cfg.Server.Debug {
+		// Backwards compatibility: debug=true means DEBUG level
+		logLevel = logger.LevelDebug
+	}
+
+	logFormat := logger.FormatText
+	if cfg.Server.LogFormat != "" {
+		logFormat = logger.ParseOutputFormat(cfg.Server.LogFormat)
+	}
+
+	log := logger.NewWithConfig(logger.Config{
+		Level:  logLevel,
+		Format: logFormat,
+		Output: os.Stdout,
+	})
 	log.Info("Starting streaming transcription server")
-	log.Info("Config: bind_address=%s, debug=%v", cfg.Server.BindAddress, cfg.Server.Debug)
+	log.Info("Config: bind_address=%s, log_level=%s, log_format=%s",
+		cfg.Server.BindAddress, logLevel.String(),
+		map[logger.OutputFormat]string{logger.FormatText: "text", logger.FormatJSON: "json"}[logFormat])
 
 	// Convert ICE servers
 	var iceServers []webrtc.ICEServer
@@ -52,6 +71,7 @@ func main() {
 			ModelPath: cfg.Transcription.ModelPath,
 			Language:  cfg.Transcription.Language,
 			Threads:   uint(cfg.Transcription.Threads),
+			Logger:    log,
 		},
 		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
 		SilenceThreshold: time.Duration(cfg.VAD.SilenceThresholdMs) * time.Millisecond,

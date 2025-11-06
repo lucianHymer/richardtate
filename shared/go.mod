@@ -1,3 +1,3 @@
-module github.com/yourusername/streaming-transcription/shared
+module github.com/lucianHymer/streaming-transcription/shared
 
 go 1.23

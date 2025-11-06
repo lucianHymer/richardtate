@@ -9,6 +9,7 @@ import (
 
 	"github.com/xaionaro-go/audio/pkg/audio"
 	"github.com/xaionaro-go/audio/pkg/noisesuppression/implementations/rnnoise"
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
 )
 
 const (
@@ -26,10 +27,13 @@ type RNNoiseProcessor struct {
 	denoiser     *rnnoise.RNNoise
 	buffer16kHz  []int16 // Buffer for incomplete 16kHz input frames
 	frameSize16k int     // Equivalent frame size at 16kHz (160 samples)
+	log          *logger.ContextLogger
 }
 
 // NewRNNoiseProcessor creates a new RNNoise processor
-func NewRNNoiseProcessor(modelPath string) (*RNNoiseProcessor, error) {
+func NewRNNoiseProcessor(modelPath string, log *logger.Logger) (*RNNoiseProcessor, error) {
+	contextLog := log.With("rnnoise")
+
 	// Create RNNoise denoiser (mono channel)
 	// Note: modelPath is currently ignored - rnnoise uses built-in model
 	denoiser, err := rnnoise.New(audio.Channel(1))
@@ -37,12 +41,13 @@ func NewRNNoiseProcessor(modelPath string) (*RNNoiseProcessor, error) {
 		return nil, fmt.Errorf("failed to create RNNoise denoiser: %w", err)
 	}
 
-	fmt.Printf("[RNNoise] Initialized - noise suppression active (16kHz ↔ 48kHz resampling)\n")
+	contextLog.Info("Initialized - noise suppression active (16kHz ↔ 48kHz resampling)")
 
 	return &RNNoiseProcessor{
 		denoiser:     denoiser,
 		buffer16kHz:  make([]int16, 0, 160),  // 10ms at 16kHz
 		frameSize16k: PipelineSampleRate / 100, // 10ms = 160 samples at 16kHz
+		log:          contextLog,
 	}, nil
 }
 
@@ -96,8 +101,11 @@ func (r *RNNoiseProcessor) ProcessChunk(samples []int16) ([]int16, error) {
 	}
 
 	if framesProcessed > 0 {
-		fmt.Printf("[RNNoise] Processed %d samples → %d frames (16kHz → 48kHz → 16kHz) → %d samples\n",
-			inputSamples, framesProcessed, len(output))
+		r.log.DebugWithFields("Processed audio", map[string]interface{}{
+			"input_samples":    inputSamples,
+			"frames_processed": framesProcessed,
+			"output_samples":   len(output),
+		})
 	}
 
 	return output, nil

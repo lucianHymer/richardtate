@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	"github.com/pion/webrtc/v4"
-	"github.com/yourusername/streaming-transcription/server/internal/logger"
-	"github.com/yourusername/streaming-transcription/server/internal/transcription"
-	"github.com/yourusername/streaming-transcription/shared/protocol"
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
+	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
 
 // Manager handles WebRTC peer connections

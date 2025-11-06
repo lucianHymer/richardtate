@@ -9,7 +9,8 @@ This knowledge map provides a comprehensive index to all documented project know
 System design, component relationships, and structural decisions.
 
 - [WebRTC Reconnection System](architecture/webrtc-reconnection-system.md) - Complete reconnection architecture with automatic recovery and 99% data integrity *(Updated: 2025-11-05)*
-- [Phase 2 Transcription Pipeline](architecture/transcription-pipeline.md) - Simplified MVP transcription using Whisper.cpp with audio accumulator *(Updated: 2025-11-06)*
+- [Transcription Pipeline Architecture](architecture/transcription-pipeline.md) - Real-time pipeline with RNNoise noise suppression, VAD-based smart chunking, and Whisper.cpp transcription *(Updated: 2025-11-06)*
+- [Logging System Architecture](architecture/logging-system.md) - Custom logging system with contextual tagging and debug mode control *(Updated: 2025-11-06)*
 
 ## Dependencies
 
@@ -27,13 +28,13 @@ Coding patterns, conventions, and project-specific approaches.
 
 How to perform common tasks and operations in this project.
 
-*(No entries yet)*
+- [Building with CGO Dependencies](workflows/building-with-cgo.md) - Critical workflows for building server with Whisper.cpp and RNNoise *(Updated: 2025-11-06)*
 
 ## Gotchas
 
 Surprises, non-obvious behaviors, and things to watch out for.
 
-*(No entries yet)*
+- [Transcription Pipeline Gotchas](gotchas/transcription-gotchas.md) - Critical issues and non-obvious behaviors in transcription pipeline *(Updated: 2025-11-06)*
 
 ---
 

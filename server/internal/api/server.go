@@ -7,10 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/yourusername/streaming-transcription/server/internal/logger"
-	"github.com/yourusername/streaming-transcription/server/internal/transcription"
-	"github.com/yourusername/streaming-transcription/server/internal/webrtc"
-	"github.com/yourusername/streaming-transcription/shared/protocol"
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
+	"github.com/lucianHymer/streaming-transcription/server/internal/webrtc"
+	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
 
 var upgrader = websocket.Upgrader{

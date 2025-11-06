@@ -3,10 +3,11 @@ package transcription
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
 )
 
 // TranscriptionPipeline handles the complete audio-to-text pipeline
@@ -19,6 +20,7 @@ type TranscriptionPipeline struct {
 	mu          sync.RWMutex
 	active      bool
 	debugWAV    bool // Enable WAV file debugging
+	log         *logger.ContextLogger
 }
 
 // TranscriptionResult holds transcription output
@@ -42,6 +44,9 @@ type PipelineConfig struct {
 
 // NewTranscriptionPipeline creates a new transcription pipeline
 func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, error) {
+	// Create logger
+	log := config.WhisperConfig.Logger.With("pipeline")
+
 	// Create Whisper transcriber
 	whisper, err := NewWhisperTranscriber(config.WhisperConfig)
 	if err != nil {
@@ -49,7 +54,7 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 	}
 
 	// Create RNNoise processor
-	rnnoise, err := NewRNNoiseProcessor(config.RNNoiseModelPath)
+	rnnoise, err := NewRNNoiseProcessor(config.RNNoiseModelPath, config.WhisperConfig.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RNNoise processor: %w", err)
 	}
@@ -67,6 +72,7 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		resultChan: resultChan,
 		active:     false,
 		debugWAV:   config.EnableDebugWAV,
+		log:        log,
 	}
 
 	// Create smart chunker with VAD
@@ -77,6 +83,7 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		MaxChunkDuration:   config.MaxChunkDuration,
 		VADEnergyThreshold: config.VADEnergyThreshold,
 		ChunkReadyCallback: pipeline.transcribeChunk,
+		Logger:             config.WhisperConfig.Logger,
 	})
 
 	return pipeline, nil
@@ -95,7 +102,7 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 	// Step 1: Denoise with RNNoise
 	denoisedBytes, err := p.rnnoise.ProcessBytes(audioData)
 	if err != nil {
-		log.Printf("[Pipeline] RNNoise error: %v", err)
+		p.log.Warn("RNNoise error: %v", err)
 		// Continue with original audio on error
 		denoisedBytes = audioData
 	}
@@ -141,12 +148,20 @@ func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 	select {
 	case p.resultChan <- result:
 		if err != nil {
-			log.Printf("[%.1fs] ERROR: %v", duration, err)
+			p.log.ErrorWithFields("Transcription failed", map[string]interface{}{
+				"duration": fmt.Sprintf("%.1fs", duration),
+				"error":    err.Error(),
+			})
 		} else {
-			log.Printf("[%.1fs] %s", duration, text)
+			p.log.InfoWithFields("Transcription complete", map[string]interface{}{
+				"duration": fmt.Sprintf("%.1fs", duration),
+				"text":     text,
+			})
 		}
 	default:
-		log.Printf("[%.1fs] DROPPED (channel full)", duration)
+		p.log.WarnWithFields("Result dropped (channel full)", map[string]interface{}{
+			"duration": fmt.Sprintf("%.1fs", duration),
+		})
 	}
 }
 
@@ -161,9 +176,9 @@ func (p *TranscriptionPipeline) saveDebugWAV(samples []int16) {
 
 	wavPath := fmt.Sprintf("/tmp/chunk-%d.wav", time.Now().Unix())
 	if err := saveWAV(wavPath, pcmData, 16000, 1, 16); err != nil {
-		log.Printf("[Pipeline] Warning: Failed to save debug WAV: %v", err)
+		p.log.Warn("Failed to save debug WAV: %v", err)
 	} else {
-		log.Printf("[Pipeline] Saved chunk to %s", wavPath)
+		p.log.Debug("Saved chunk to %s", wavPath)
 	}
 }
 

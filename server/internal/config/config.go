@@ -12,6 +12,8 @@ type Config struct {
 	Server struct {
 		BindAddress string `yaml:"bind_address"`
 		Debug       bool   `yaml:"debug"`
+		LogLevel    string `yaml:"log_level"` // debug, info, warn, error, fatal
+		LogFormat   string `yaml:"log_format"` // text, json
 	} `yaml:"server"`
 
 	WebRTC struct {

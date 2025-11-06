@@ -2,6 +2,10 @@
 
 package transcription
 
+import (
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
+)
+
 // This file is used when building WITHOUT the rnnoise build tag
 // It provides a pass-through implementation
 
@@ -17,13 +21,17 @@ const (
 // RNNoiseProcessor handles noise suppression using RNNoise
 // THIS IS THE PASS-THROUGH VERSION (no actual denoising)
 type RNNoiseProcessor struct {
-	// Empty struct - pass-through implementation
+	log *logger.ContextLogger
 }
 
 // NewRNNoiseProcessor creates a new RNNoise processor (pass-through)
-func NewRNNoiseProcessor(modelPath string) (*RNNoiseProcessor, error) {
-	// Pass-through implementation (no actual denoising)
-	return &RNNoiseProcessor{}, nil
+func NewRNNoiseProcessor(modelPath string, log *logger.Logger) (*RNNoiseProcessor, error) {
+	contextLog := log.With("rnnoise")
+	contextLog.Warn("DISABLED - Using pass-through (build with -tags rnnoise for noise suppression)")
+
+	return &RNNoiseProcessor{
+		log: contextLog,
+	}, nil
 }
 
 // ProcessChunk processes an audio chunk through RNNoise

@@ -8,8 +8,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
-	"github.com/yourusername/streaming-transcription/client/internal/logger"
-	"github.com/yourusername/streaming-transcription/shared/protocol"
+	"github.com/lucianHymer/streaming-transcription/client/internal/logger"
+	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
 
 // Client handles WebRTC connection to the server

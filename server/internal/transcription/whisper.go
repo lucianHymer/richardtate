@@ -2,10 +2,10 @@ package transcription
 
 import (
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
 )
 
 // WhisperTranscriber handles audio transcription using Whisper.cpp
@@ -14,6 +14,7 @@ type WhisperTranscriber struct {
 	ctx     whisper.Context
 	mu      sync.Mutex
 	threads uint
+	log     *logger.ContextLogger
 }
 
 // WhisperConfig holds configuration for Whisper transcriber
@@ -21,10 +22,14 @@ type WhisperConfig struct {
 	ModelPath string
 	Language  string // "en" or "auto"
 	Threads   uint   // Number of threads for processing
+	Logger    *logger.Logger
 }
 
 // NewWhisperTranscriber creates a new Whisper transcriber instance
 func NewWhisperTranscriber(config WhisperConfig) (*WhisperTranscriber, error) {
+	// Create logger
+	log := config.Logger.With("whisper")
+
 	// Load model
 	model, err := whisper.New(config.ModelPath)
 	if err != nil {
@@ -54,14 +59,17 @@ func NewWhisperTranscriber(config WhisperConfig) (*WhisperTranscriber, error) {
 	// Set token timestamps for more accurate segment timing
 	ctx.SetTokenTimestamps(true)
 
-	log.Printf("[Whisper] Context configured: language=%s, threads=%d",
-		config.Language, config.Threads)
+	log.InfoWithFields("Context configured", map[string]interface{}{
+		"language": config.Language,
+		"threads":  config.Threads,
+	})
 
 	return &WhisperTranscriber{
 		model:   model,
 		ctx:     ctx,
 		mu:      sync.Mutex{},
 		threads: config.Threads,
+		log:     log,
 	}, nil
 }
 
@@ -90,11 +98,17 @@ func (w *WhisperTranscriber) Transcribe(audioSamples []float32) (string, error) 
 	}
 	avg := sum / float32(len(audioSamples))
 
-	log.Printf("[Whisper] Audio stats: samples=%d, duration=%.2fs, min=%.4f, max=%.4f, avg=%.4f",
-		len(audioSamples), float64(len(audioSamples))/16000.0, min, max, avg)
+	duration := float64(len(audioSamples)) / 16000.0
+	w.log.DebugWithFields("Audio stats", map[string]interface{}{
+		"samples":  len(audioSamples),
+		"duration": fmt.Sprintf("%.2fs", duration),
+		"min":      fmt.Sprintf("%.4f", min),
+		"max":      fmt.Sprintf("%.4f", max),
+		"avg":      fmt.Sprintf("%.4f", avg),
+	})
 
 	// Process audio through Whisper with callback to collect segments
-	log.Printf("[Whisper] Starting Whisper processing...")
+	w.log.Debug("Starting Whisper processing...")
 
 	var fullText string
 	segmentCount := 0
@@ -103,8 +117,12 @@ func (w *WhisperTranscriber) Transcribe(audioSamples []float32) (string, error) 
 	err := w.ctx.Process(audioSamples, nil, func(segment whisper.Segment) {
 		segmentCount++
 		text := segment.Text
-		log.Printf("[Whisper] Segment %d: %q (start=%.2fs, end=%.2fs)",
-			segmentCount, text, float64(segment.Start)/100.0, float64(segment.End)/100.0)
+		w.log.DebugWithFields("Segment received", map[string]interface{}{
+			"segment": segmentCount,
+			"text":    text,
+			"start":   fmt.Sprintf("%.2fs", float64(segment.Start)/100.0),
+			"end":     fmt.Sprintf("%.2fs", float64(segment.End)/100.0),
+		})
 		segments = append(segments, text)
 	}, nil)
 
@@ -120,7 +138,10 @@ func (w *WhisperTranscriber) Transcribe(audioSamples []float32) (string, error) 
 		fullText += seg
 	}
 
-	log.Printf("[Whisper] Transcription complete: %d segments, text length=%d", segmentCount, len(fullText))
+	w.log.DebugWithFields("Transcription complete", map[string]interface{}{
+		"segments":    segmentCount,
+		"text_length": len(fullText),
+	})
 	return fullText, nil
 }
 

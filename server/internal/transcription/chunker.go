@@ -1,9 +1,10 @@
 package transcription
 
 import (
-	"log"
 	"sync"
 	"time"
+
+	"github.com/lucianHymer/streaming-transcription/server/internal/logger"
 )
 
 // SmartChunkerConfig holds configuration for VAD-based chunking
@@ -14,6 +15,7 @@ type SmartChunkerConfig struct {
 	MaxChunkDuration   time.Duration // Maximum chunk duration (safety limit)
 	VADEnergyThreshold float64       // Energy threshold for VAD
 	ChunkReadyCallback func([]int16) // Called when chunk is ready for transcription
+	Logger             *logger.Logger
 }
 
 // SmartChunker accumulates audio and chunks based on VAD silence detection
@@ -25,6 +27,7 @@ type SmartChunker struct {
 	startTime   time.Time
 	lastChunk   time.Time
 	totalSpeech time.Duration
+	log         *logger.ContextLogger
 }
 
 // NewSmartChunker creates a new VAD-based audio chunker
@@ -54,7 +57,8 @@ func NewSmartChunker(config SmartChunkerConfig) *SmartChunker {
 		SilenceThresholdMs: int(config.SilenceThreshold.Milliseconds()),
 	})
 
-	// Initialization complete - logging done at pipeline level
+	// Create logger
+	log := config.Logger.With("chunker")
 
 	return &SmartChunker{
 		config:    config,
@@ -62,6 +66,7 @@ func NewSmartChunker(config SmartChunkerConfig) *SmartChunker {
 		buffer:    make([]int16, 0, config.SampleRate*int(config.MaxChunkDuration.Seconds())),
 		startTime: time.Now(),
 		lastChunk: time.Now(),
+		log:       log,
 	}
 }
 
@@ -151,7 +156,7 @@ func (c *SmartChunker) Flush() {
 	c.bufferMu.Lock()
 	defer c.bufferMu.Unlock()
 
-	log.Printf("[SmartChunker] Forcing flush of remaining buffer")
+	c.log.Debug("Forcing flush of remaining buffer")
 	c.flushChunk()
 }
 

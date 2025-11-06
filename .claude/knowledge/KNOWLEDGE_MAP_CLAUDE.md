@@ -8,6 +8,7 @@ System design, component relationships, and structural decisions.
 
 @architecture/webrtc-reconnection-system.md
 @architecture/transcription-pipeline.md
+@architecture/logging-system.md
 
 ## Dependencies
 
@@ -25,13 +26,13 @@ Coding patterns, conventions, and project-specific approaches.
 
 How to perform common tasks and operations in this project.
 
-*(No entries yet)*
+@workflows/building-with-cgo.md
 
 ## Gotchas
 
 Surprises, non-obvious behaviors, and things to watch out for.
 
-*(No entries yet)*
+@gotchas/transcription-gotchas.md
 
 ---
 

@@ -1,4 +1,4 @@
-module github.com/yourusername/streaming-transcription/server
+module github.com/lucianHymer/streaming-transcription/server
 
 go 1.23
 
@@ -6,7 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/webrtc/v4 v4.1.6
-	github.com/yourusername/streaming-transcription/shared v0.0.0-00010101000000-000000000000
+	github.com/lucianHymer/streaming-transcription/shared v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -57,4 +57,4 @@ require (
 	lukechampine.com/blake3 v1.3.0 // indirect
 )
 
-replace github.com/yourusername/streaming-transcription/shared => ../shared
+replace github.com/lucianHymer/streaming-transcription/shared => ../shared
