@@ -228,11 +228,19 @@ func (s *Server) BroadcastTranscription(text string, isFinal bool) {
 	}
 
 	s.wsClientsMu.RLock()
+	clientCount := len(s.wsClients)
+	s.wsClientsMu.RUnlock()
+
+	s.logger.Debug("Broadcasting to %d WebSocket clients: %s (final=%v)", clientCount, text, isFinal)
+
+	s.wsClientsMu.RLock()
 	defer s.wsClientsMu.RUnlock()
 
 	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			s.logger.Error("Failed to send to WebSocket client: %v", err)
+		} else {
+			s.logger.Debug("Sent chunk to WebSocket client successfully")
 		}
 	}
 }
