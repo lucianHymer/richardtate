@@ -4,8 +4,11 @@
 #
 # Prerequisites:
 #   brew install whisper-cpp
-#   brew install rnnoise
 #   brew install go
+#
+# Optional (for RNNoise noise suppression):
+#   ./scripts/install-rnnoise-lib.sh
+#   NOTE: Do NOT use 'brew install rnnoise' - it installs a different package
 #
 
 set -e
@@ -36,24 +39,21 @@ fi
 # Check if rnnoise is installed (optional but recommended)
 ENABLE_RNNOISE=false
 
-# First check for locally-built rnnoise
+# Check for locally-built rnnoise (required on macOS)
+# Note: Homebrew's rnnoise package does NOT work - you MUST build from source
 LOCAL_RNNOISE="$PROJECT_ROOT/deps/rnnoise"
 if [ -d "$LOCAL_RNNOISE/lib" ] && [ -f "$LOCAL_RNNOISE/lib/librnnoise.so" -o -f "$LOCAL_RNNOISE/lib/librnnoise.dylib" ]; then
     echo "✅ Found locally-built rnnoise at $LOCAL_RNNOISE"
     ENABLE_RNNOISE=true
     RNNOISE_PREFIX="$LOCAL_RNNOISE"
-# Then check for Homebrew rnnoise
-elif brew list rnnoise &> /dev/null 2>&1; then
-    echo "✅ Found Homebrew rnnoise - will build with noise suppression"
-    ENABLE_RNNOISE=true
-    RNNOISE_PREFIX=$(brew --prefix rnnoise)
 else
     echo "⚠️  rnnoise not installed - building WITHOUT noise suppression"
     echo ""
-    echo "To enable RNNoise (recommended for noisy environments):"
-    echo "  Option 1 (build from source): ./scripts/install-rnnoise-lib.sh"
-    echo "  Option 2 (Homebrew): brew install rnnoise"
+    echo "To enable RNNoise (recommended for noisy environments on macOS):"
+    echo "  Run: ./scripts/install-rnnoise-lib.sh"
     echo "  Then re-run this script"
+    echo ""
+    echo "Note: Do NOT use 'brew install rnnoise' - it installs the wrong package."
     echo ""
 fi
 
