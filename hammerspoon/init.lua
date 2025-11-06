@@ -124,7 +124,7 @@ local function connectWebSocket()
         return
     end
 
-    state.ws:connect()
+    -- WebSocket automatically connects, no need to call :connect()
 end
 
 local function disconnectWebSocket()
