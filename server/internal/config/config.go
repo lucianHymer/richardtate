@@ -11,8 +11,7 @@ import (
 type Config struct {
 	Server struct {
 		BindAddress string `yaml:"bind_address"`
-		Debug       bool   `yaml:"debug"`
-		LogLevel    string `yaml:"log_level"` // debug, info, warn, error, fatal
+		LogLevel    string `yaml:"log_level"`  // debug, info, warn, error, fatal
 		LogFormat   string `yaml:"log_format"` // text, json
 	} `yaml:"server"`
 
@@ -21,22 +20,19 @@ type Config struct {
 	} `yaml:"webrtc"`
 
 	Transcription struct {
-		ModelPath  string `yaml:"model_path"`
-		Language   string `yaml:"language"`
-		Translate  bool   `yaml:"translate"`
-		Threads    int    `yaml:"threads"`
-		UseGPU     bool   `yaml:"use_gpu"`
+		ModelPath      string `yaml:"model_path"`
+		Language       string `yaml:"language"`
+		Threads        int    `yaml:"threads"`
+		EnableDebugWAV bool   `yaml:"enable_debug_wav"` // Save chunks as WAV files for debugging
 	} `yaml:"transcription"`
 
 	NoiseSuppression struct {
-		Enabled   bool   `yaml:"enabled"`
 		ModelPath string `yaml:"model_path"`
 	} `yaml:"noise_suppression"`
 
 	VAD struct {
-		Enabled            bool    `yaml:"enabled"`
-		EnergyThreshold    float64 `yaml:"energy_threshold"`     // VAD energy threshold (default: 500.0)
-		SilenceThresholdMs int     `yaml:"silence_threshold_ms"` // Silence duration to trigger chunk (default: 1000ms)
+		EnergyThreshold    float64 `yaml:"energy_threshold"`      // VAD energy threshold (default: 100.0)
+		SilenceThresholdMs int     `yaml:"silence_threshold_ms"`  // Silence duration to trigger chunk (default: 1000ms)
 		MinChunkDurationMs int     `yaml:"min_chunk_duration_ms"` // Minimum chunk duration (default: 500ms)
 		MaxChunkDurationMs int     `yaml:"max_chunk_duration_ms"` // Maximum chunk duration (default: 30000ms)
 	} `yaml:"vad"`
@@ -73,6 +69,7 @@ func Load(path string) (*Config, error) {
 func Default() *Config {
 	cfg := &Config{}
 	cfg.Server.BindAddress = "localhost:8080"
-	cfg.Server.Debug = true
+	cfg.Server.LogLevel = "info"
+	cfg.Server.LogFormat = "text"
 	return cfg
 }

@@ -17,27 +17,13 @@ server:
   # WebSocket URL for signaling
   # For localhost: "ws://localhost:8080"
   # For LAN: "ws://192.168.1.100:8080"
-  # mDNS support can be added later
   url: "ws://localhost:8080"
-
-  # Connection retry configuration
-  reconnect_delay_ms: 1000
-  max_reconnect_delay_ms: 30000
-  reconnect_backoff_multiplier: 2.0
 
 # Audio capture configuration
 audio:
-  # Sample rate (Hz)
-  sample_rate: 16000
-
-  # Channels (1 = mono)
-  channels: 1
-
-  # Bits per sample
-  bits_per_sample: 16
-
-  # Chunk duration in milliseconds
-  chunk_duration_ms: 150
-
-  # Device name (empty = default device)
+  # Audio device name (empty = default microphone)
+  # List available devices with: pactl list sources short (Linux) or system settings (macOS)
   device_name: ""
+
+# Note: Audio format is hardcoded to 16kHz mono 16-bit PCM with 200ms chunks
+# These values are optimized for speech transcription and cannot be changed via config

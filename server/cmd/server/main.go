@@ -35,9 +35,6 @@ func main() {
 	logLevel := logger.LevelInfo
 	if cfg.Server.LogLevel != "" {
 		logLevel = logger.ParseLogLevel(cfg.Server.LogLevel)
-	} else if cfg.Server.Debug {
-		// Backwards compatibility: debug=true means DEBUG level
-		logLevel = logger.LevelDebug
 	}
 
 	logFormat := logger.FormatText
@@ -74,12 +71,12 @@ func main() {
 			Logger:    log,
 		},
 		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
-		SilenceThreshold: time.Duration(cfg.VAD.SilenceThresholdMs) * time.Millisecond,
-		MinChunkDuration: time.Duration(cfg.VAD.MinChunkDurationMs) * time.Millisecond,
-		MaxChunkDuration: time.Duration(cfg.VAD.MaxChunkDurationMs) * time.Millisecond,
+		SilenceThreshold:   time.Duration(cfg.VAD.SilenceThresholdMs) * time.Millisecond,
+		MinChunkDuration:   time.Duration(cfg.VAD.MinChunkDurationMs) * time.Millisecond,
+		MaxChunkDuration:   time.Duration(cfg.VAD.MaxChunkDurationMs) * time.Millisecond,
 		VADEnergyThreshold: cfg.VAD.EnergyThreshold,
-		ResultChannelSize: 10,
-		EnableDebugWAV: cfg.Server.Debug, // Save debug WAV files when in debug mode
+		ResultChannelSize:  10,
+		EnableDebugWAV:     cfg.Transcription.EnableDebugWAV,
 	}
 
 	pipeline, err := transcription.NewTranscriptionPipeline(pipelineConfig)

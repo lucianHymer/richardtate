@@ -17,18 +17,11 @@ type Config struct {
 	} `yaml:"client"`
 
 	Server struct {
-		URL                     string  `yaml:"url"`
-		ReconnectDelayMS        int     `yaml:"reconnect_delay_ms"`
-		MaxReconnectDelayMS     int     `yaml:"max_reconnect_delay_ms"`
-		ReconnectBackoffMultiplier float64 `yaml:"reconnect_backoff_multiplier"`
+		URL string `yaml:"url"`
 	} `yaml:"server"`
 
 	Audio struct {
-		SampleRate        int    `yaml:"sample_rate"`
-		Channels          int    `yaml:"channels"`
-		BitsPerSample     int    `yaml:"bits_per_sample"`
-		ChunkDurationMS   int    `yaml:"chunk_duration_ms"`
-		DeviceName        string `yaml:"device_name"`
+		DeviceName string `yaml:"device_name"` // Empty = default device
 	} `yaml:"audio"`
 }
 
@@ -57,27 +50,6 @@ func Load(path string) (*Config, error) {
 	if cfg.Server.URL == "" {
 		cfg.Server.URL = "ws://localhost:8080"
 	}
-	if cfg.Server.ReconnectDelayMS == 0 {
-		cfg.Server.ReconnectDelayMS = 1000
-	}
-	if cfg.Server.MaxReconnectDelayMS == 0 {
-		cfg.Server.MaxReconnectDelayMS = 30000
-	}
-	if cfg.Server.ReconnectBackoffMultiplier == 0 {
-		cfg.Server.ReconnectBackoffMultiplier = 2.0
-	}
-	if cfg.Audio.SampleRate == 0 {
-		cfg.Audio.SampleRate = 16000
-	}
-	if cfg.Audio.Channels == 0 {
-		cfg.Audio.Channels = 1
-	}
-	if cfg.Audio.BitsPerSample == 0 {
-		cfg.Audio.BitsPerSample = 16
-	}
-	if cfg.Audio.ChunkDurationMS == 0 {
-		cfg.Audio.ChunkDurationMS = 150
-	}
 
 	return &cfg, nil
 }
@@ -90,12 +62,5 @@ func Default() *Config {
 	cfg.Client.DebugLogPath = "./debug.log"
 	cfg.Client.DebugLogMaxSize = 8388608
 	cfg.Server.URL = "ws://localhost:8080"
-	cfg.Server.ReconnectDelayMS = 1000
-	cfg.Server.MaxReconnectDelayMS = 30000
-	cfg.Server.ReconnectBackoffMultiplier = 2.0
-	cfg.Audio.SampleRate = 16000
-	cfg.Audio.Channels = 1
-	cfg.Audio.BitsPerSample = 16
-	cfg.Audio.ChunkDurationMS = 150
 	return cfg
 }
