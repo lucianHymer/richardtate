@@ -150,12 +150,20 @@ func (w *Wizard) Run(clientConfigPath string, autoSave bool) error {
 		backgroundFramesAboveThreshold, speechFramesAboveThreshold)
 
 	// Save to config
+	// Auto-detect server config path
+	defaultConfigPath := "config.yaml"
+	if _, err := os.Stat("server/config.yaml"); err == nil {
+		defaultConfigPath = "server/config.yaml"
+	} else if _, err := os.Stat("../server/config.yaml"); err == nil {
+		defaultConfigPath = "../server/config.yaml"
+	}
+
 	var serverConfigPath string
 	if autoSave {
-		fmt.Print("  💾 Enter server config path [config.yaml]: ")
+		fmt.Printf("  💾 Enter server config path [%s]: ", defaultConfigPath)
 		fmt.Scanln(&serverConfigPath)
 		if serverConfigPath == "" {
-			serverConfigPath = "config.yaml"
+			serverConfigPath = defaultConfigPath
 		}
 
 		if err := w.updateServerConfig(serverConfigPath, recommendedThreshold); err != nil {
@@ -167,10 +175,10 @@ func (w *Wizard) Run(clientConfigPath string, autoSave bool) error {
 		var response string
 		fmt.Scanln(&response)
 		if response == "" || response == "Y" || response == "y" {
-			fmt.Print("  📄 Enter server config path [config.yaml]: ")
+			fmt.Printf("  📄 Enter server config path [%s]: ", defaultConfigPath)
 			fmt.Scanln(&serverConfigPath)
 			if serverConfigPath == "" {
-				serverConfigPath = "config.yaml"
+				serverConfigPath = defaultConfigPath
 			}
 
 			if err := w.updateServerConfig(serverConfigPath, recommendedThreshold); err != nil {
@@ -259,10 +267,15 @@ func (w *Wizard) analyzeAudio(audioData []byte) (*AudioStatistics, error) {
 
 // updateServerConfig updates the server config file with new threshold
 func (w *Wizard) updateServerConfig(configPath string, threshold float64) error {
+	// Check if file exists first
+	if _, err := os.Stat(configPath); err != nil {
+		return fmt.Errorf("config file not found at '%s': %w", configPath, err)
+	}
+
 	// Read existing config
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
+		return fmt.Errorf("failed to read config file '%s': %w", configPath, err)
 	}
 
 	// Parse YAML
