@@ -193,6 +193,41 @@ go build -o "$PROJECT_ROOT/client/client" ./cmd/client
 cd "$PROJECT_ROOT"
 success "Client built"
 
+# Set up launchd services
+echo ""
+echo "Setting up launchd services..."
+
+# Create logs directory
+LOGS_DIR="$CONFIG_DIR/logs"
+if [ ! -d "$LOGS_DIR" ]; then
+    mkdir -p "$LOGS_DIR"
+    success "Created logs directory: $LOGS_DIR"
+else
+    success "Logs directory exists: $LOGS_DIR"
+fi
+
+# Install launchd plists
+PLIST_DIR="$HOME/Library/LaunchAgents"
+mkdir -p "$PLIST_DIR"
+
+# Process server plist (replace placeholders)
+info "Installing server launchd service..."
+sed "s|PROJECT_ROOT|$PROJECT_ROOT|g; s|HOME|$HOME|g" \
+    "$SCRIPT_DIR/com.richardtate.server.plist" > "$PLIST_DIR/com.richardtate.server.plist"
+success "Server service installed"
+
+# Process client plist (replace placeholders)
+info "Installing client launchd service..."
+sed "s|PROJECT_ROOT|$PROJECT_ROOT|g; s|HOME|$HOME|g" \
+    "$SCRIPT_DIR/com.richardtate.client.plist" > "$PLIST_DIR/com.richardtate.client.plist"
+success "Client service installed"
+
+# Install control script
+info "Installing richardtate control script..."
+sudo cp "$SCRIPT_DIR/richardtate" /usr/local/bin/richardtate
+sudo chmod +x /usr/local/bin/richardtate
+success "Control script installed to /usr/local/bin/richardtate"
+
 # Installation complete
 echo ""
 echo "================================"
@@ -201,22 +236,31 @@ echo "================================"
 echo ""
 echo "Next steps:"
 echo ""
-echo "1. Start the server:"
-echo "   cd $PROJECT_ROOT/server"
-echo "   ./server"
-echo ""
-echo "2. In another terminal, calibrate VAD threshold:"
+echo "1. Calibrate VAD threshold (one-time setup):"
 echo "   cd $PROJECT_ROOT/client"
 echo "   ./client --calibrate"
 echo ""
-echo "3. Start the client:"
-echo "   ./client"
+echo "2. Start the services:"
+echo "   richardtate start"
 echo ""
-echo "4. (Optional) Install Hammerspoon integration:"
+echo "3. Check service status:"
+echo "   richardtate status"
+echo ""
+echo "4. View logs:"
+echo "   richardtate logs"
+echo ""
+echo "5. (Optional) Install Hammerspoon integration:"
 echo "   brew install --cask hammerspoon"
 echo "   cd $PROJECT_ROOT/hammerspoon && ./install.sh"
 echo "   Press Ctrl+N to start/stop recording"
 echo ""
-echo "Configuration: $CONFIG_DIR/config.yaml"
-echo "Debug logs: $CONFIG_DIR/debug.log"
+echo "Control Commands:"
+echo "  richardtate start    - Start server and client"
+echo "  richardtate stop     - Stop server and client"
+echo "  richardtate restart  - Restart both services"
+echo "  richardtate status   - Show service status"
+echo "  richardtate logs     - Tail service logs"
+echo ""
+echo "Configuration: $CONFIG_DIR/"
+echo "Logs: $LOGS_DIR/"
 echo ""

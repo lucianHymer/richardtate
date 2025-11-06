@@ -170,13 +170,7 @@ If you prefer manual setup, see the detailed steps in [docs/SETUP.md](docs/SETUP
 
 ### Post-Installation
 
-1. **Start the server:**
-   ```bash
-   cd server
-   ./server
-   ```
-
-2. **Calibrate VAD threshold** (in another terminal):
+1. **Calibrate VAD threshold** (one-time setup):
    ```bash
    cd client
    ./client --calibrate
@@ -184,10 +178,25 @@ If you prefer manual setup, see the detailed steps in [docs/SETUP.md](docs/SETUP
 
    Follow the wizard to measure your microphone's background noise and speech levels.
 
-3. **Start the client:**
+2. **Start the services as background daemons:**
    ```bash
-   ./client
+   richardtate start
    ```
+
+   The client and server now run in the background! They will:
+   - Auto-start on login
+   - Auto-restart on crash
+   - Log to `~/.config/richardtate/logs/`
+
+3. **Control the services:**
+   ```bash
+   richardtate status   # Check if running
+   richardtate logs     # View logs
+   richardtate restart  # Restart both
+   richardtate stop     # Stop both
+   ```
+
+   See [docs/DAEMON-SETUP.md](docs/DAEMON-SETUP.md) for details.
 
 4. **(Optional) Install Hammerspoon integration:**
    ```bash

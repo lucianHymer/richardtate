@@ -1,0 +1,183 @@
+#!/bin/bash
+# Richard Tate - Control script for managing server and client daemons
+
+set -e
+
+PLIST_DIR="$HOME/Library/LaunchAgents"
+SERVER_LABEL="com.richardtate.server"
+CLIENT_LABEL="com.richardtate.client"
+
+# Color output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+info() {
+    echo -e "${BLUE}ℹ${NC}  $1"
+}
+
+success() {
+    echo -e "${GREEN}✓${NC}  $1"
+}
+
+warn() {
+    echo -e "${YELLOW}⚠${NC}  $1"
+}
+
+error() {
+    echo -e "${RED}✗${NC}  $1"
+}
+
+check_installed() {
+    if [ ! -f "$PLIST_DIR/$SERVER_LABEL.plist" ] || [ ! -f "$PLIST_DIR/$CLIENT_LABEL.plist" ]; then
+        error "Richard Tate services not installed"
+        echo "  Run: scripts/install-mac.sh"
+        exit 1
+    fi
+}
+
+cmd_start() {
+    check_installed
+    info "Starting Richard Tate services..."
+
+    launchctl load "$PLIST_DIR/$SERVER_LABEL.plist" 2>/dev/null || true
+    launchctl load "$PLIST_DIR/$CLIENT_LABEL.plist" 2>/dev/null || true
+
+    sleep 1
+
+    if launchctl list | grep -q "$SERVER_LABEL" && launchctl list | grep -q "$CLIENT_LABEL"; then
+        success "Server and client started"
+    else
+        error "Failed to start services"
+        echo "  Check logs: tail -f ~/.config/richardtate/logs/*.log"
+        exit 1
+    fi
+}
+
+cmd_stop() {
+    check_installed
+    info "Stopping Richard Tate services..."
+
+    launchctl unload "$PLIST_DIR/$SERVER_LABEL.plist" 2>/dev/null || true
+    launchctl unload "$PLIST_DIR/$CLIENT_LABEL.plist" 2>/dev/null || true
+
+    success "Server and client stopped"
+}
+
+cmd_restart() {
+    info "Restarting Richard Tate services..."
+    cmd_stop
+    sleep 1
+    cmd_start
+}
+
+cmd_status() {
+    check_installed
+    echo "Richard Tate Service Status:"
+    echo ""
+
+    if launchctl list | grep -q "$SERVER_LABEL"; then
+        success "Server: running"
+    else
+        warn "Server: stopped"
+    fi
+
+    if launchctl list | grep -q "$CLIENT_LABEL"; then
+        success "Client: running"
+    else
+        warn "Client: stopped"
+    fi
+
+    echo ""
+    echo "Logs:"
+    echo "  Server: ~/.config/richardtate/logs/server.log"
+    echo "  Client: ~/.config/richardtate/logs/client.log"
+}
+
+cmd_logs() {
+    local service="${1:-both}"
+
+    case "$service" in
+        server)
+            tail -f ~/.config/richardtate/logs/server.log
+            ;;
+        client)
+            tail -f ~/.config/richardtate/logs/client.log
+            ;;
+        both)
+            tail -f ~/.config/richardtate/logs/server.log ~/.config/richardtate/logs/client.log
+            ;;
+        *)
+            error "Unknown service: $service"
+            echo "  Usage: richardtate logs [server|client|both]"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_help() {
+    cat << EOF
+Richard Tate - Voice Transcription Control
+
+Usage: richardtate <command> [options]
+
+Commands:
+  start      Start server and client daemons
+  stop       Stop server and client daemons
+  restart    Restart both services
+  status     Show service status
+  logs       Tail service logs (default: both)
+             Options: server, client, both
+  help       Show this help message
+
+Examples:
+  richardtate start
+  richardtate status
+  richardtate logs server
+  richardtate restart
+
+Service Management:
+  Services run in background via launchd
+  Auto-start on login (RunAtLoad enabled)
+  Auto-restart on crash (KeepAlive enabled)
+
+Configuration:
+  ~/.config/richardtate/client.yaml
+  ~/.config/richardtate/server.yaml
+
+Logs:
+  ~/.config/richardtate/logs/server.log
+  ~/.config/richardtate/logs/client.log
+
+EOF
+}
+
+# Main command routing
+case "${1:-help}" in
+    start)
+        cmd_start
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    restart)
+        cmd_restart
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs)
+        cmd_logs "${2:-both}"
+        ;;
+    help|--help|-h)
+        cmd_help
+        ;;
+    *)
+        error "Unknown command: $1"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac
