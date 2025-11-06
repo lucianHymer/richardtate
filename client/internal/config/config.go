@@ -32,6 +32,9 @@ type Config struct {
 			MaxChunkDurationMs int     `yaml:"max_chunk_duration_ms"`
 		} `yaml:"vad"`
 	} `yaml:"transcription"`
+
+	// Internal field to track config file path for reloading
+	filePath string
 }
 
 // Load reads and parses the configuration file
@@ -45,6 +48,9 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
+
+	// Store the file path for reloading
+	cfg.filePath = path
 
 	// Set defaults
 	if cfg.Client.APIBindAddress == "" {
@@ -75,6 +81,31 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// Reload reloads the configuration from disk and updates the current config in-place.
+// This allows all components holding a reference to this config to see the updated values
+// without requiring a restart or passing new config references around.
+func (c *Config) Reload() error {
+	if c.filePath == "" {
+		return fmt.Errorf("config file path not set, cannot reload")
+	}
+
+	// Load fresh config from disk
+	newCfg, err := Load(c.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to reload config: %w", err)
+	}
+
+	// Update all fields in-place to preserve references
+	// This ensures all components (WebRTC client, API server, etc.) see the new values
+	c.Client = newCfg.Client
+	c.Server = newCfg.Server
+	c.Audio = newCfg.Audio
+	c.Transcription = newCfg.Transcription
+	// Keep the same filePath
+
+	return nil
 }
 
 // Default returns a default configuration

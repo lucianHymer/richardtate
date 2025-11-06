@@ -27,3 +27,30 @@
 **Files**: client/internal/config/update.go, client/internal/api/server.go, client/internal/calibrate/calibrate.go
 ---
 
+### [15:03] [architecture] Config hot-reload on calibration save
+**Details**: The calibration save endpoint now automatically reloads the client config after saving the new VAD threshold. This eliminates the need to restart the client daemon to pick up calibration changes.
+
+**Implementation**:
+- Added `Config.Reload()` method that reloads from disk and updates config in-place
+- Config stores its file path (`filePath` field) for reloading
+- Calibration save endpoint calls `cfg.Reload()` after successful save
+- Updates all fields in-place to preserve references
+
+**Why in-place update works**:
+- All components (WebRTC client, API server) hold a pointer to the same config struct
+- Updating fields in-place means all references see the new values immediately
+- `SendControlStart()` reads from `c.config.Transcription.VAD.EnergyThreshold` each time
+- Next recording session automatically uses the new threshold
+
+**User workflow**:
+1. Client daemon running
+2. Run calibration (Hammerspoon or CLI)
+3. Save threshold
+4. Config auto-reloads (logged: "Config reloaded - new threshold will be used on next recording: X.X")
+5. Start new recording → uses new threshold
+6. NO RESTART REQUIRED
+
+**Error handling**: If reload fails, endpoint returns 500 with "Config saved but reload failed" message.
+**Files**: client/internal/config/config.go, client/internal/api/server.go
+---
+

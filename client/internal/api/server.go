@@ -471,12 +471,23 @@ func (s *Server) handleCalibrateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.logger.Info("Config saved successfully to %s", configPath)
+
+	// Reload config to pick up the new threshold immediately
+	// This updates the config in-place, so the next SendControlStart() will use the new threshold
+	// without requiring a client restart
+	if err := s.cfg.Reload(); err != nil {
+		s.logger.Error("Failed to reload config: %v", err)
+		http.Error(w, fmt.Sprintf("Config saved but reload failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Info("Config reloaded - new threshold will be used on next recording: %.1f", s.cfg.Transcription.VAD.EnergyThreshold)
+
 	response := CalibrateSaveResponse{
 		Success:    true,
 		ConfigPath: configPath,
 	}
-
-	s.logger.Info("Config saved successfully to %s", configPath)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
