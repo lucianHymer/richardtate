@@ -714,7 +714,241 @@ Remember: This replaces keyboard input for many workflows, so reliability and sp
 
 ---
 
-## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-06 Session 9 - REAL RNNOISE INTEGRATED! 🎯🔇)
+## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-06 Session 10 - CLIENT DISPLAY COMPLETE! 📺✅)
+
+### 📅 **SESSION UPDATE: 2025-11-06 Session 10 - CLIENT TRANSCRIPTION DISPLAY!** 📺
+
+**TL;DR: Transcriptions now display in client terminal! Users can see their words appearing as they speak. Simple, clean terminal output with emoji prefixes.**
+
+#### What We Accomplished This Session (Session 10)
+
+**🎯 MAJOR FEATURE: Client-Side Transcription Display**
+
+**Previous System (Session 9)**: Transcriptions only visible in server logs
+**New System (Session 10)**: Client terminal shows transcriptions in real-time
+
+---
+
+### Session 10 Accomplishments
+
+#### **1. ✅ Client Transcription Display Implementation**
+
+**Feature**: Client now displays transcriptions received from server in terminal output.
+
+**Implementation** (`client/cmd/client/main.go`):
+```go
+case protocol.MessageTypeTranscriptFinal:
+    var transcript protocol.TranscriptData
+    if err := json.Unmarshal(msg.Data, &transcript); err != nil {
+        fmt.Fprintf(os.Stderr, "❌ Failed to unmarshal final transcript: %v\n", err)
+        return
+    }
+    fmt.Printf("✅ %s\n", transcript.Text)
+```
+
+**Output Format**:
+- Final transcripts: `✅ transcribed text here`
+- Partial transcripts: `📝 [partial] text` (for future use, not currently sent by server)
+- Errors: `❌ Failed to unmarshal...` (to stderr)
+
+**Design Decisions**:
+- Simple `fmt.Printf()` - no UI/webview complexity yet
+- Minimal, clean output for terminal use
+- Errors go to stderr, transcriptions to stdout
+- Ready for future enhancement (timestamps, accumulation, formatting)
+
+---
+
+#### **2. ✅ Verified JSON Encoding/Decoding Pattern**
+
+**Critical Learning**: Confirmed the double-layer JSON pattern is correct by design.
+
+**The Pattern**:
+```
+Server: Marshal TranscriptData → Put in Message.Data → Marshal whole Message
+Client: Unmarshal whole Message → Unmarshal Message.Data field
+```
+
+**Why Two Marshals/Unmarshals?**:
+- `Message` is the outer envelope (type, timestamp, generic data)
+- `Data` field uses `json.RawMessage` which preserves inner JSON as raw bytes
+- `json.RawMessage` tells decoder "don't decode this field, keep it as JSON bytes"
+- Inner data must be unmarshaled separately based on message type
+
+**Test Verification**:
+```go
+// Server: double marshal
+inner := InnerData{Text: "hello"}
+innerJSON, _ := json.Marshal(inner)           // First marshal
+msg := Message{Type: "test", Data: innerJSON}
+msgJSON, _ := json.Marshal(msg)               // Second marshal
+
+// Client: double unmarshal
+var receivedMsg Message
+json.Unmarshal(msgJSON, &receivedMsg)         // First unmarshal
+// receivedMsg.Data is still JSON bytes!
+var receivedInner InnerData
+json.Unmarshal(receivedMsg.Data, &receivedInner)  // Second unmarshal
+```
+
+**Why This Matters**: The previous audio bug was triple-encoding (marshaling BEFORE calling send function). Our current pattern is the correct double-layer approach - no bug here!
+
+---
+
+#### **3. 📝 Files Modified**
+
+**Modified**:
+- `client/cmd/client/main.go` - Added transcription display handlers
+  - Added imports: `encoding/json`, `fmt`
+  - Implemented `MessageTypeTranscriptFinal` handler
+  - Implemented `MessageTypeTranscriptPartial` handler (future use)
+  - Proper error handling to stderr
+
+**Lines Changed**: +12 insertions, -5 deletions
+
+---
+
+### 🚨 CRITICAL THINGS FOR TOMORROW'S TEAM (SESSION 10 NOTES)
+
+#### **1. Client Display is Terminal-Only (Not UI Yet)**
+
+The client currently displays transcriptions using simple `fmt.Printf()` to terminal.
+
+**Current**: Terminal output with emoji prefixes
+**Future**: Could add:
+- Session text accumulation (save complete transcription)
+- Timestamps per chunk
+- Formatting/colors (if terminal supports)
+- Eventually: Hammerspoon webview UI (V1 plan)
+
+**Don't overthink it** - this simple approach works great for testing and early use!
+
+---
+
+#### **2. JSON Double-Layer Pattern is CORRECT**
+
+If you see double marshaling/unmarshaling in the codebase, **don't "fix" it**!
+
+**Pattern**:
+1. Inner data struct → JSON (TranscriptData, AudioChunkData, etc.)
+2. Outer Message struct → JSON (includes Type, Timestamp, Data field)
+3. Unmarshal outer Message
+4. Unmarshal inner Data field based on Type
+
+**This is intentional** because `json.RawMessage` preserves the inner JSON as bytes.
+
+**Bad**: Marshaling data before calling a send function that also marshals (triple encoding)
+**Good**: Pass struct to send function, let it do the marshaling (double encoding)
+
+---
+
+#### **3. Testing End-to-End Now Possible**
+
+You can now see the full flow in action:
+
+```bash
+# Terminal 1: Server
+cd /workspace/project/server
+./cmd/server/server
+
+# Terminal 2: Client
+cd /workspace/project/client
+./cmd/client/client
+
+# Terminal 3: Control
+curl -X POST http://localhost:8081/start
+# Speak into microphone...
+curl -X POST http://localhost:8081/stop
+
+# Check Terminal 2 (client) - you'll see:
+# ✅ Hello, this is a test
+# ✅ The transcription system is working
+# ✅ This is really cool
+```
+
+**What to Look For**:
+- Transcriptions appear in client terminal (not just server logs)
+- Chunks arrive ~1-3 seconds after speaking (VAD silence detection)
+- Text is clean and accurate
+- No weird encoding artifacts or double-JSON strings
+
+---
+
+#### **4. Current Architecture is Simple by Design**
+
+**Client Terminal Output**:
+- ✅ Displays transcriptions ✅
+- ✅ Simple and clean ✅
+- ❌ No session accumulation
+- ❌ No timestamps
+- ❌ No save-to-file
+- ❌ No UI window
+
+These missing features are **intentional** - we're building incrementally. Next step is debug log file (V1 requirement), not fancy UI.
+
+---
+
+#### **5. Partial Transcripts Handler Ready But Unused**
+
+We implemented `MessageTypeTranscriptPartial` handler, but server doesn't send partial results yet.
+
+**Current**: Server only sends `MessageTypeTranscriptFinal` after VAD detects silence
+**Future**: Could send partial results during ongoing speech for even faster feedback
+
+**If you enable partials**, users will see:
+```
+📝 [partial] Hello this is a te...
+📝 [partial] Hello this is a test of the...
+✅ Hello this is a test of the transcription system
+```
+
+This is already implemented on client side, just needs server-side streaming support.
+
+---
+
+### Current System Status (Updated Session 10)
+
+**✅ WORKING**:
+- Real RNNoise noise suppression (with `-tags rnnoise` build)
+- 16kHz ↔ 48kHz resampling (3x linear interpolation)
+- VAD-based speech detection with speech duration gating
+- Smart chunking on 1 second silence
+- Streaming transcriptions from server to client
+- **CLIENT TERMINAL DISPLAY** (NEW!)
+- Hallucination prevention (requires 1s of actual speech)
+- Debug logging for RNNoise visibility
+- Auto-detecting build system for Mac
+
+**⏳ NOT YET IMPLEMENTED**:
+- Debug log file to disk (8MB rolling log - V1 requirement)
+- Session text accumulation in client
+- Post-processing modes (V2 feature)
+- Hammerspoon UI window (V1 plan)
+
+**📊 PERFORMANCE**:
+- End-to-end latency: ~1-3 seconds (speech → silence → transcription displayed)
+- Client display overhead: Negligible (simple printf)
+- User experience: Clean, immediate feedback
+
+---
+
+### What's Next
+
+**Immediate priorities (Post Session 10)**:
+1. **Debug Log File** (V1 Requirement) - 8MB rolling log at `~/.streaming-transcription/debug.log`
+2. **Production Testing** - Coffee shop test with real noise!
+3. **Session Accumulation** (Optional) - Save complete transcription text in client
+4. **Hammerspoon Integration** (V1 Plan) - Hotkey control, text insertion
+
+**V1 is almost complete!** We have:
+- ✅ Real-time streaming
+- ✅ RNNoise noise suppression
+- ✅ VAD smart chunking
+- ✅ Whisper transcription
+- ✅ Client display
+- ⏳ Debug logging (next!)
+
+---
 
 ### 📅 **SESSION UPDATE: 2025-11-06 Session 9 - REAL RNNOISE WITH 16kHz↔48kHz RESAMPLING!** 🔇→✨
 
