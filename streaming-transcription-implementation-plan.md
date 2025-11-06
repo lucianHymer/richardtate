@@ -1131,10 +1131,11 @@ This is **not urgent** - the current approach works fine. Just noting it for fut
 ### What's Next
 
 **Immediate priorities (Post Session 11)**:
-1. **Debug Log File** (V1 Requirement) - 8MB rolling log at `~/.streaming-transcription/debug.log`
-2. **Production Testing** - Coffee shop test with real noise!
-3. **Session Accumulation** (Optional) - Save complete transcription text in client
-4. **Hammerspoon Integration** (V1 Plan) - Hotkey control, text insertion
+1. **VAD Calibration Wizard** (UX Improvement) - Automatic threshold tuning 🆕
+2. **Debug Log File** (V1 Requirement) - 8MB rolling log at `~/.streaming-transcription/debug.log`
+3. **Production Testing** - Coffee shop test with real noise!
+4. **Session Accumulation** (Optional) - Save complete transcription text in client
+5. **Hammerspoon Integration** (V1 Plan) - Hotkey control, text insertion
 
 **V1 is almost complete!** We have:
 - ✅ Real-time streaming
@@ -1143,7 +1144,226 @@ This is **not urgent** - the current approach works fine. Just noting it for fut
 - ✅ Whisper transcription
 - ✅ Client display
 - ✅ Professional logging system ⭐ NEW!
-- ⏳ Debug logging (next!)
+- ⏳ VAD calibration wizard (next!)
+- ⏳ Debug logging
+
+---
+
+### 🎯 **PLANNED FEATURE: VAD Calibration Wizard**
+
+**Problem**: VAD energy threshold tuning is difficult
+- Current approach: manually set `energy_threshold` in config
+- Users don't understand what "500" means
+- Too much data if logging raw energy values
+- Hard to tell if threshold is working correctly
+
+**Solution**: Automatic calibration wizard with guided steps
+
+#### Calibration Wizard Flow
+
+```bash
+./client --calibrate
+
+🎤 VAD Calibration Wizard
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1/3: Recording background noise (5 seconds)...
+  Be quiet and don't speak.
+  ░░░░░░░░░░░░░░░░░░░░ 100%
+
+  ✓ Background noise level: 45 (min: 12, max: 89)
+
+Step 2/3: Recording your speech (5 seconds)...
+  Speak normally into the microphone.
+  ░░░░░░░░░░░░░░░░░░░░ 100%
+
+  ✓ Speech level: 654 (min: 234, max: 1823)
+
+Step 3/3: Analysis
+  Background: ████░░░░░░░░░░░░░░ 45
+  Speech:     ████████████████░░ 654
+
+  📊 Recommended threshold: 150
+     (halfway between background max and speech min)
+
+  💾 Save to config? [Y/n]
+```
+
+#### Implementation Plan
+
+**1. Create Calibration Package** (`client/internal/calibrate/`)
+- `calibrate.go` - Main calibration wizard logic
+- `stats.go` - Energy statistics calculation (min, max, avg, percentiles)
+
+**2. Add Calibration Mode to Client**
+- New flag: `--calibrate` in `client/cmd/client/main.go`
+- When flag present: run calibration instead of normal operation
+- Uses same audio capture as normal mode
+
+**3. Calibration Steps**
+
+**Step 1: Background Noise Recording (5 seconds)**
+- Start audio capture
+- Record energy levels for 5 seconds
+- Calculate statistics:
+  - `backgroundMin` - Minimum energy detected
+  - `backgroundMax` - Maximum energy detected
+  - `backgroundAvg` - Average energy
+  - `backgroundP95` - 95th percentile (filter spikes)
+
+**Step 2: Speech Recording (5 seconds)**
+- Prompt user to speak normally
+- Record energy levels for 5 seconds
+- Calculate statistics:
+  - `speechMin` - Minimum energy during speech
+  - `speechMax` - Maximum energy during speech
+  - `speechAvg` - Average energy
+  - `speechP5` - 5th percentile (filter quiet moments)
+
+**Step 3: Analysis & Recommendation**
+- Calculate recommended threshold:
+  ```go
+  // Threshold = halfway between background ceiling and speech floor
+  // With safety margin
+  threshold = (backgroundP95 + speechP5) / 2
+
+  // Alternative: background + 20% margin
+  // threshold = backgroundP95 * 1.2
+  ```
+- Display visual comparison
+- Show recommended value
+- Offer to save to config file
+
+**4. Configuration Update**
+- Parse existing `config.yaml`
+- Update `vad.energy_threshold` field
+- Preserve all other settings
+- Write back to file
+- Show confirmation
+
+#### Technical Details
+
+**Energy Calculation** (same as VAD):
+```go
+// RMS energy calculation
+func calculateEnergy(samples []int16) float64 {
+    var sum int64
+    for _, sample := range samples {
+        sum += int64(sample) * int64(sample)
+    }
+    return float64(sum) / float64(len(samples))
+}
+```
+
+**Progress Bar** (terminal):
+```go
+func printProgressBar(percent int, width int) {
+    filled := (percent * width) / 100
+    fmt.Printf("\r  ")
+    for i := 0; i < width; i++ {
+        if i < filled {
+            fmt.Print("█")
+        } else {
+            fmt.Print("░")
+        }
+    }
+    fmt.Printf(" %d%%", percent)
+}
+```
+
+**Visual Comparison**:
+```go
+func visualizeComparison(background, speech, threshold float64) {
+    maxVal := max(background, speech) * 1.1
+    bgBar := int((background / maxVal) * 20)
+    speechBar := int((speech / maxVal) * 20)
+    thresholdBar := int((threshold / maxVal) * 20)
+
+    fmt.Printf("  Background: %s %d\n", strings.Repeat("█", bgBar) + strings.Repeat("░", 20-bgBar), int(background))
+    fmt.Printf("  Speech:     %s %d\n", strings.Repeat("█", speechBar) + strings.Repeat("░", 20-speechBar), int(speech))
+    fmt.Printf("  Threshold:  %s %d ← recommended\n", strings.Repeat("▓", thresholdBar), int(threshold))
+}
+```
+
+#### File Structure
+
+```
+client/
+  internal/
+    calibrate/
+      calibrate.go      # Main wizard logic
+      stats.go          # Statistical calculations
+      display.go        # Terminal UI (progress bar, visualization)
+      config.go         # Config file reading/writing
+  cmd/
+    client/
+      main.go           # Add --calibrate flag handling
+```
+
+#### Usage After Implementation
+
+**Basic calibration:**
+```bash
+./client --calibrate
+```
+
+**Skip confirmation (auto-save):**
+```bash
+./client --calibrate --yes
+```
+
+**Custom config path:**
+```bash
+./client --calibrate --config=/path/to/config.yaml
+```
+
+**Test without saving:**
+```bash
+./client --calibrate --dry-run
+```
+
+#### Benefits
+
+1. **User-Friendly**: No need to understand RMS energy values
+2. **Automatic**: Calculates optimal threshold based on environment
+3. **Visual**: Progress bars and comparison charts
+4. **Safe**: Shows recommendation before saving
+5. **Fast**: Takes only 10 seconds total
+6. **Portable**: Each environment gets calibrated separately
+
+#### Future Enhancements
+
+**Phase 2 Additions:**
+- **Visual meter mode**: `./client --monitor` for real-time energy display
+- **Multiple profiles**: Save calibrations for different environments
+  - "office" (noisy)
+  - "home" (quiet)
+  - "coffee-shop" (very noisy)
+- **Auto-recalibration**: Detect when threshold seems wrong and suggest re-calibration
+- **Adaptive threshold**: Continuous learning during normal use
+
+#### Testing Plan
+
+**Manual Testing:**
+1. Run calibration in quiet room
+2. Run calibration in noisy environment
+3. Verify threshold works well after calibration
+4. Test config file writing (doesn't corrupt other settings)
+5. Test with missing config file (creates new one)
+
+**Edge Cases:**
+- User doesn't speak during speech recording → warn and retry
+- Background noise higher than speech → warn user to move to quieter location
+- Config file write fails → show error, print recommended value for manual entry
+
+#### Success Criteria
+
+✅ Calibration completes in < 15 seconds
+✅ 90% of users get working threshold on first try
+✅ Clear, understandable terminal output
+✅ Config file updated without breaking other settings
+✅ Works on both Mac and Linux
+✅ Graceful error handling for edge cases
 
 ---
 
