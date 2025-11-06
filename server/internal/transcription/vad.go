@@ -43,9 +43,6 @@ func NewVAD(config VADConfig) *VoiceActivityDetector {
 
 	samplesPerFrame := config.SampleRate * config.FrameDurationMs / 1000
 
-	log.Printf("[VAD] Initialized - threshold=%.0f, silence_trigger=%dms, frame_size=%d samples",
-		config.EnergyThreshold, config.SilenceThresholdMs, samplesPerFrame)
-
 	return &VoiceActivityDetector{
 		config:          config,
 		samplesPerFrame: samplesPerFrame,
@@ -65,9 +62,10 @@ func (v *VoiceActivityDetector) ProcessFrame(samples []int16) bool {
 	// Determine if speech or silence
 	isSpeech := energy > v.config.EnergyThreshold
 
-	// Log energy every 100 frames (~1 second) to help with threshold tuning
-	if v.consecutiveSpeech%100 == 0 || v.consecutiveSilence%100 == 0 {
-		log.Printf("[VAD] Energy: %.1f (threshold: %.1f) → %s",
+	// Log only on state transitions
+	wasJustSpeech := v.lastFrameWasSpeech
+	if isSpeech != wasJustSpeech {
+		log.Printf("[VAD] Energy: %.1f (threshold: %.1f) → Crossing to %s",
 			energy, v.config.EnergyThreshold, map[bool]string{true: "SPEECH", false: "SILENCE"}[isSpeech])
 	}
 

@@ -42,21 +42,17 @@ type PipelineConfig struct {
 
 // NewTranscriptionPipeline creates a new transcription pipeline
 func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, error) {
-	log.Printf("[Pipeline] Initializing with RNNoise + VAD + Whisper")
-
 	// Create Whisper transcriber
 	whisper, err := NewWhisperTranscriber(config.WhisperConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Whisper transcriber: %w", err)
 	}
-	log.Printf("[Pipeline] ✓ Whisper initialized")
 
 	// Create RNNoise processor
 	rnnoise, err := NewRNNoiseProcessor(config.RNNoiseModelPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RNNoise processor: %w", err)
 	}
-	log.Printf("[Pipeline] ✓ RNNoise initialized")
 
 	// Result channel
 	resultChanSize := config.ResultChannelSize
@@ -82,9 +78,9 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		VADEnergyThreshold: config.VADEnergyThreshold,
 		ChunkReadyCallback: pipeline.transcribeChunk,
 	})
-	log.Printf("[Pipeline] ✓ Smart Chunker initialized")
 
-	log.Printf("[Pipeline] Pipeline ready: RNNoise → VAD → Whisper")
+	log.Printf("[Pipeline] Ready: VAD chunking (threshold=%.0f, silence=%.1fs)",
+		config.VADEnergyThreshold, config.SilenceThreshold.Seconds())
 	return pipeline, nil
 }
 
@@ -122,7 +118,7 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 // transcribeChunk is called by the chunker when a chunk is ready for transcription
 func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 	duration := float64(len(samples)) / 16000.0
-	log.Printf("[Pipeline] Transcribing chunk: %.2f seconds (%d samples)", duration, len(samples))
+	log.Printf("[Whisper] 🎤 Transcribing %.1fs...", duration)
 
 	// Save debug WAV if enabled
 	if p.debugWAV {
@@ -148,12 +144,12 @@ func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 	select {
 	case p.resultChan <- result:
 		if err != nil {
-			log.Printf("[Pipeline] ❌ Transcription error: %v", err)
+			log.Printf("[Whisper] ❌ Error: %v", err)
 		} else {
-			log.Printf("[Pipeline] ✓ Transcription: %q", text)
+			log.Printf("[Whisper] ✅ \"%s\"", text)
 		}
 	default:
-		log.Printf("[Pipeline] ⚠️  Result channel full, dropping result")
+		log.Printf("[Whisper] ⚠️  Result channel full!")
 	}
 }
 

@@ -54,8 +54,7 @@ func NewSmartChunker(config SmartChunkerConfig) *SmartChunker {
 		SilenceThresholdMs: int(config.SilenceThreshold.Milliseconds()),
 	})
 
-	log.Printf("[SmartChunker] Initialized - silence_threshold=%v, min_chunk=%v, max_chunk=%v",
-		config.SilenceThreshold, config.MinChunkDuration, config.MaxChunkDuration)
+	// Initialization complete - logging done at pipeline level
 
 	return &SmartChunker{
 		config:    config,
@@ -105,14 +104,6 @@ func (c *SmartChunker) ProcessSamples(samples []int16) {
 		offset += frameSize
 	}
 
-	// Log current status periodically (every 500ms)
-	if len(c.buffer)%(c.config.SampleRate/2) < len(samples) {
-		stats := c.vad.Stats()
-		bufferDuration := c.getBufferDuration()
-		log.Printf("[SmartChunker] Status: speech=%v, silence=%.2fs, buffer=%.2fs, should_chunk=%v",
-			stats.IsSpeaking, stats.SilenceDuration.Seconds(), bufferDuration.Seconds(), c.vad.ShouldChunk())
-	}
-
 	// Check if we should chunk
 	c.checkAndChunk()
 }
@@ -133,16 +124,10 @@ func (c *SmartChunker) checkAndChunk() {
 
 	// Check if VAD detected sufficient silence AND we have enough audio
 	if shouldChunk && bufferDuration >= c.config.MinChunkDuration {
-		log.Printf("[SmartChunker] ✂️  CHUNKING! Silence=%.2fs (threshold=%.2fs), Buffer=%.2fs → SENDING TO WHISPER",
-			silenceDuration.Seconds(), c.config.SilenceThreshold.Seconds(), bufferDuration.Seconds())
+		log.Printf("[SmartChunker] ✂️  CHUNK READY! Silence=%.2fs → Sending %.2fs to Whisper",
+			silenceDuration.Seconds(), bufferDuration.Seconds())
 		c.flushChunk()
 		return
-	}
-
-	// Debug: Show why we're NOT chunking
-	if shouldChunk && bufferDuration < c.config.MinChunkDuration {
-		log.Printf("[SmartChunker] ⏸️  Silence detected but buffer too short (%.2fs < %.2fs min)",
-			bufferDuration.Seconds(), c.config.MinChunkDuration.Seconds())
 	}
 }
 
@@ -150,7 +135,6 @@ func (c *SmartChunker) checkAndChunk() {
 // Must be called with bufferMu locked
 func (c *SmartChunker) flushChunk() {
 	if len(c.buffer) == 0 {
-		log.Printf("[SmartChunker] No audio to chunk (empty buffer)")
 		return
 	}
 
@@ -158,11 +142,7 @@ func (c *SmartChunker) flushChunk() {
 	chunk := make([]int16, len(c.buffer))
 	copy(chunk, c.buffer)
 
-	duration := c.getBufferDuration()
 	vadStats := c.vad.Stats()
-
-	log.Printf("[SmartChunker] Flushing chunk: duration=%.2fs, samples=%d, speech=%.2fs",
-		duration.Seconds(), len(chunk), vadStats.SpeechDuration.Seconds())
 
 	// Clear buffer
 	c.buffer = c.buffer[:0]
