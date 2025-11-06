@@ -6,8 +6,8 @@ set -e
 echo "🎤 Installing Hammerspoon Integration for Streaming Transcription"
 echo ""
 
-# Check if Hammerspoon is installed
-if ! command -v hs &> /dev/null; then
+# Check if Hammerspoon is installed (check for app bundle)
+if [ ! -d "/Applications/Hammerspoon.app" ]; then
     echo "❌ Hammerspoon not found!"
     echo ""
     echo "Please install Hammerspoon first:"
@@ -17,7 +17,7 @@ if ! command -v hs &> /dev/null; then
     exit 1
 fi
 
-echo "✅ Hammerspoon found"
+echo "✅ Hammerspoon found at /Applications/Hammerspoon.app"
 echo ""
 
 # Create Hammerspoon config directory
