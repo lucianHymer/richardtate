@@ -1,9 +1,5 @@
 package transcription
 
-import (
-	"log"
-)
-
 const (
 	// RNNoise operates on 10ms frames
 	TargetSampleRate   = 16000 // Our audio is 16kHz

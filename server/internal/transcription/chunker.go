@@ -99,7 +99,6 @@ func (c *SmartChunker) ProcessSamples(samples []int16) {
 // Must be called with bufferMu locked
 func (c *SmartChunker) checkAndChunk() {
 	bufferDuration := c.getBufferDuration()
-	silenceDuration := c.vad.GetSilenceDuration()
 	shouldChunk := c.vad.ShouldChunk()
 
 	// Safety: Always chunk if we hit max duration

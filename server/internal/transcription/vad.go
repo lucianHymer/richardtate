@@ -1,7 +1,6 @@
 package transcription
 
 import (
-	"log"
 	"math"
 	"time"
 )
