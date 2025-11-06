@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
 	"github.com/lucianHymer/streaming-transcription/client/internal/calibrate"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
+	"github.com/lucianHymer/streaming-transcription/client/internal/debuglog"
 	"github.com/lucianHymer/streaming-transcription/client/internal/webrtc"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
@@ -40,6 +42,15 @@ func main() {
 	// Initialize logger
 	log := logger.New(cfg.Client.Debug)
 	globalLog = log // Set global logger for message handler
+
+	// Initialize debug log
+	debugLog, err := debuglog.New(cfg.Client.DebugLogPath)
+	if err != nil {
+		log.Fatal("Failed to create debug log: %v", err)
+	}
+	defer debugLog.Close()
+	globalDebugLog = debugLog
+	log.Info("Debug log initialized at: %s", cfg.Client.DebugLogPath)
 
 	// Run calibration wizard if --calibrate flag is set
 	if *calibrateMode {
@@ -120,6 +131,13 @@ func main() {
 		func() error {
 			log.Info("Start recording requested")
 
+			// Initialize session tracking
+			sessionMu.Lock()
+			sessionChunks = []string{}
+			sessionStart = time.Now()
+			sessionRecording = true
+			sessionMu.Unlock()
+
 			// Send control start message to server
 			if err := webrtcClient.SendControlStart(); err != nil {
 				log.Error("Failed to send control start: %v", err)
@@ -145,9 +163,21 @@ func main() {
 			}
 			log.Info("Audio capture stopped")
 
-			// Save client-side recording for debugging
-			// TODO: Remove this debug code after fixing audio issue
-			log.Info("Client-side recording saved for debugging (not implemented yet)")
+			// Log complete session to debug log
+			sessionMu.Lock()
+			sessionRecording = false
+			fullText := strings.Join(sessionChunks, " ")
+			duration := time.Since(sessionStart).Seconds()
+			sessionMu.Unlock()
+
+			if fullText != "" {
+				if err := globalDebugLog.LogComplete(fullText, duration); err != nil {
+					log.Error("Failed to log complete session: %v", err)
+				} else {
+					log.Info("Session logged: %d chunks, %.1f seconds, %d chars",
+						len(sessionChunks), duration, len(fullText))
+				}
+			}
 
 			// Send control stop message to server
 			if err := webrtcClient.SendControlStop(); err != nil {
@@ -200,6 +230,17 @@ func main() {
 // Global logger for message handler (set in main)
 var globalLog *logger.Logger
 
+// Global debug logger (set in main)
+var globalDebugLog *debuglog.Logger
+
+// Session state for tracking complete transcriptions
+var (
+	sessionMu       sync.Mutex
+	sessionChunks   []string
+	sessionStart    time.Time
+	sessionRecording bool
+)
+
 // handleDataChannelMessage handles messages received from the server
 func handleDataChannelMessage(msg *protocol.Message) {
 	messageLog := globalLog.With("message")
@@ -224,6 +265,18 @@ func handleDataChannelMessage(msg *protocol.Message) {
 			return
 		}
 		fmt.Printf("✅ %s\n", transcript.Text)
+
+		// Log chunk to debug log
+		if err := globalDebugLog.LogChunk(transcript.Text); err != nil {
+			messageLog.Error("Failed to log chunk to debug log: %v", err)
+		}
+
+		// Track session chunks
+		sessionMu.Lock()
+		if sessionRecording {
+			sessionChunks = append(sessionChunks, transcript.Text)
+		}
+		sessionMu.Unlock()
 
 	default:
 		messageLog.Debug("Received message type: %s", string(msg.Type))
