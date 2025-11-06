@@ -93,6 +93,8 @@ local function connectWebSocket()
     end
 
     state.ws = hs.websocket.new(config.wsURL, function(event, message)
+        print("🔔 WebSocket event: " .. tostring(event) .. " | message: " .. tostring(message))
+
         if event == "message" then
             local success, data = pcall(hs.json.decode, message)
             if success and data.chunk then
