@@ -144,6 +144,10 @@ func main() {
 			}
 			log.Info("Audio capture stopped")
 
+			// Save client-side recording for debugging
+			// TODO: Remove this debug code after fixing audio issue
+			log.Info("Client-side recording saved for debugging (not implemented yet)")
+
 			// Send control stop message to server
 			if err := webrtcClient.SendControlStop(); err != nil {
 				log.Error("Failed to send control stop: %v", err)

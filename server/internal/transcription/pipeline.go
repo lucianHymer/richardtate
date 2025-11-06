@@ -179,6 +179,23 @@ func (p *TranscriptionPipeline) Stop() error {
 func (p *TranscriptionPipeline) transcribeSession(audioData []byte) {
 	log.Printf("[Pipeline] Transcribing %d bytes of PCM audio", len(audioData))
 
+	// Inspect first few bytes
+	if len(audioData) >= 20 {
+		log.Printf("[Pipeline] First 20 bytes (hex): ")
+		for i := 0; i < 20; i++ {
+			fmt.Printf("%02x ", audioData[i])
+		}
+		fmt.Println()
+
+		// Interpret as int16 samples
+		fmt.Printf("[Pipeline] First 5 samples (int16): ")
+		for i := 0; i < 10 && i < len(audioData); i += 2 {
+			sample := int16(audioData[i]) | int16(audioData[i+1])<<8
+			fmt.Printf("%d ", sample)
+		}
+		fmt.Println()
+	}
+
 	// Save audio to WAV file for debugging
 	wavPath := "/tmp/last-recording.wav"
 	if err := saveWAV(wavPath, audioData, 16000, 1, 16); err != nil {
