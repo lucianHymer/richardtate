@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
@@ -17,35 +18,89 @@ type Manager struct {
 	peerConns   map[string]*PeerConnection
 	peerConnsMu sync.RWMutex
 	config      webrtc.Configuration
-	pipeline    *transcription.TranscriptionPipeline
+
+	// Factory config for creating pipelines
+	whisperConfig    transcription.WhisperConfig
+	rnnoiseModelPath string
+	enableDebugWAV   bool
 }
 
 // PeerConnection represents a single WebRTC peer connection
 type PeerConnection struct {
-	ID         string
-	pc         *webrtc.PeerConnection
+	ID          string
+	pc          *webrtc.PeerConnection
 	dataChannel *webrtc.DataChannel
-	logger     *logger.ContextLogger
-	onMessage  func(msg *protocol.Message)
+	pipeline    *transcription.TranscriptionPipeline // Each peer has their own
+	logger      *logger.ContextLogger
+	onMessage   func(msg *protocol.Message)
+}
+
+// ManagerConfig contains configuration for creating pipelines
+type ManagerConfig struct {
+	WhisperConfig    transcription.WhisperConfig
+	RNNoiseModelPath string
+	EnableDebugWAV   bool
 }
 
 // New creates a new WebRTC manager
-func New(log *logger.Logger, iceServers []webrtc.ICEServer, pipeline *transcription.TranscriptionPipeline) *Manager {
-	config := webrtc.Configuration{
+func New(log *logger.Logger, iceServers []webrtc.ICEServer, config ManagerConfig) *Manager {
+	webrtcConfig := webrtc.Configuration{
 		ICEServers: iceServers,
 	}
 
 	return &Manager{
-		logger:    log.With("webrtc"),
-		peerConns: make(map[string]*PeerConnection),
-		config:    config,
-		pipeline:  pipeline,
+		logger:           log.With("webrtc"),
+		peerConns:        make(map[string]*PeerConnection),
+		config:           webrtcConfig,
+		whisperConfig:    config.WhisperConfig,
+		rnnoiseModelPath: config.RNNoiseModelPath,
+		enableDebugWAV:   config.EnableDebugWAV,
 	}
 }
 
-// GetPipeline returns the transcription pipeline
-func (m *Manager) GetPipeline() *transcription.TranscriptionPipeline {
-	return m.pipeline
+// CreatePipelineForPeer creates a new pipeline with client-provided settings
+func (m *Manager) CreatePipelineForPeer(peerID string, settings *protocol.ControlStartData) (*transcription.TranscriptionPipeline, error) {
+	m.peerConnsMu.RLock()
+	peer, exists := m.peerConns[peerID]
+	m.peerConnsMu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("peer %s not found", peerID)
+	}
+
+	// Create pipeline config with client settings
+	config := transcription.PipelineConfig{
+		WhisperConfig:      m.whisperConfig,
+		RNNoiseModelPath:   m.rnnoiseModelPath,
+		VADEnergyThreshold: settings.VADEnergyThreshold,
+		SilenceThreshold:   time.Duration(settings.SilenceThresholdMs) * time.Millisecond,
+		MinChunkDuration:   time.Duration(settings.MinChunkDurationMs) * time.Millisecond,
+		MaxChunkDuration:   time.Duration(settings.MaxChunkDurationMs) * time.Millisecond,
+		EnableDebugWAV:     m.enableDebugWAV,
+	}
+
+	// Create pipeline
+	pipeline, err := transcription.NewTranscriptionPipeline(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pipeline: %w", err)
+	}
+
+	// Store in peer connection
+	peer.pipeline = pipeline
+	m.logger.Info("Created pipeline for peer %s with VAD threshold %.0f", peerID, settings.VADEnergyThreshold)
+
+	return pipeline, nil
+}
+
+// GetPeerPipeline returns the pipeline for a specific peer
+func (m *Manager) GetPeerPipeline(peerID string) *transcription.TranscriptionPipeline {
+	m.peerConnsMu.RLock()
+	defer m.peerConnsMu.RUnlock()
+
+	if peer, exists := m.peerConns[peerID]; exists {
+		return peer.pipeline
+	}
+	return nil
 }
 
 // CreatePeerConnection creates a new peer connection
@@ -120,6 +175,13 @@ func (m *Manager) RemovePeerConnection(id string) {
 	defer m.peerConnsMu.Unlock()
 
 	if peer, exists := m.peerConns[id]; exists {
+		// Clean up pipeline if it exists
+		if peer.pipeline != nil {
+			peer.pipeline.Stop()
+			peer.pipeline.Close()
+			m.logger.Info("Closed pipeline for peer %s", id)
+		}
+
 		if peer.pc != nil {
 			peer.pc.Close()
 		}

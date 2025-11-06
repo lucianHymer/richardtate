@@ -30,6 +30,15 @@ type Message struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
+// ControlStartData contains transcription settings sent by client
+type ControlStartData struct {
+	// VAD Settings
+	VADEnergyThreshold float64 `json:"vad_energy_threshold"`
+	SilenceThresholdMs int     `json:"silence_threshold_ms"`
+	MinChunkDurationMs int     `json:"min_chunk_duration_ms"`
+	MaxChunkDurationMs int     `json:"max_chunk_duration_ms"`
+}
+
 // AudioChunkData contains raw PCM audio data
 type AudioChunkData struct {
 	SampleRate int    `json:"sample_rate"`

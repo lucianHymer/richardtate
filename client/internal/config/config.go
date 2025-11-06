@@ -23,6 +23,15 @@ type Config struct {
 	Audio struct {
 		DeviceName string `yaml:"device_name"` // Empty = default device
 	} `yaml:"audio"`
+
+	Transcription struct {
+		VAD struct {
+			EnergyThreshold    float64 `yaml:"energy_threshold"`
+			SilenceThresholdMs int     `yaml:"silence_threshold_ms"`
+			MinChunkDurationMs int     `yaml:"min_chunk_duration_ms"`
+			MaxChunkDurationMs int     `yaml:"max_chunk_duration_ms"`
+		} `yaml:"vad"`
+	} `yaml:"transcription"`
 }
 
 // Load reads and parses the configuration file
@@ -51,6 +60,20 @@ func Load(path string) (*Config, error) {
 		cfg.Server.URL = "ws://localhost:8080"
 	}
 
+	// Transcription defaults
+	if cfg.Transcription.VAD.EnergyThreshold == 0 {
+		cfg.Transcription.VAD.EnergyThreshold = 500.0 // Default threshold
+	}
+	if cfg.Transcription.VAD.SilenceThresholdMs == 0 {
+		cfg.Transcription.VAD.SilenceThresholdMs = 1000 // 1 second
+	}
+	if cfg.Transcription.VAD.MinChunkDurationMs == 0 {
+		cfg.Transcription.VAD.MinChunkDurationMs = 500 // 500ms
+	}
+	if cfg.Transcription.VAD.MaxChunkDurationMs == 0 {
+		cfg.Transcription.VAD.MaxChunkDurationMs = 30000 // 30 seconds
+	}
+
 	return &cfg, nil
 }
 
@@ -62,5 +85,9 @@ func Default() *Config {
 	cfg.Client.DebugLogPath = "./debug.log"
 	cfg.Client.DebugLogMaxSize = 8388608
 	cfg.Server.URL = "ws://localhost:8080"
+	cfg.Transcription.VAD.EnergyThreshold = 500.0
+	cfg.Transcription.VAD.SilenceThresholdMs = 1000
+	cfg.Transcription.VAD.MinChunkDurationMs = 500
+	cfg.Transcription.VAD.MaxChunkDurationMs = 30000
 	return cfg
 }

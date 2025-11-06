@@ -27,3 +27,19 @@ audio:
 
 # Note: Audio format is hardcoded to 16kHz mono 16-bit PCM with 200ms chunks
 # These values are optimized for speech transcription and cannot be changed via config
+
+# Transcription configuration
+transcription:
+  # Voice Activity Detection (VAD) settings
+  vad:
+    # Energy threshold for speech detection (calibrate with --calibrate flag)
+    energy_threshold: 500.0
+
+    # Duration of silence before triggering chunk (milliseconds)
+    silence_threshold_ms: 1000
+
+    # Minimum chunk duration before sending to transcription (milliseconds)
+    min_chunk_duration_ms: 500
+
+    # Maximum chunk duration to prevent runaway recording (milliseconds)
+    max_chunk_duration_ms: 30000

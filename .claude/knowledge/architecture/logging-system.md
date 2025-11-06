@@ -1,6 +1,6 @@
 # Logging System Architecture
 
-**Last Updated**: 2025-11-06 (Session 11 - Unified Logger)
+**Last Updated**: 2025-11-06 (Session 13 - Config-driven log levels)
 
 ## Overview
 Unified structured logging system shared between client and server, built on Go's standard library `log` package with contextual tagging and structured fields support.
@@ -184,7 +184,34 @@ log := logger.NewWithConfig(logger.Config{
 })
 ```
 
+## Configuration
+
+**Server** (config.yaml):
+```yaml
+server:
+  log_level: "info"   # Options: debug, info, warn, error, fatal
+  log_format: "text"  # Options: text, json
+```
+
+**Backwards Compatibility**: Old `debug: true/false` flag still works:
+- `debug: true` → equivalent to `log_level: debug`
+- `debug: false` → equivalent to `log_level: info`
+
+**Log Level Behavior**:
+- DEBUG: Shows everything (RNNoise frames, Whisper audio stats, VAD processing)
+- INFO: Transcription results, pipeline events, server startup
+- WARN: Warnings, pass-through mode notices, dropped results
+- ERROR: Transcription failures, serious errors
+- FATAL: Unrecoverable errors (exits program)
+
 ## Migration History
+
+**Session 13 (2025-11-06)**: Standardized logging with config-driven levels
+- Added log_level and log_format configuration to config.yaml
+- Replaced all raw `log.Printf()` calls with proper logger
+- Added structured logging with `*WithFields()` methods
+- Component tagging standardized across server
+- Fixed module names: `yourusername` → `lucianHymer`
 
 **Session 11 (2025-11-06)**: Complete logging unification
 - Moved `server/internal/logger/` → `shared/logger/`

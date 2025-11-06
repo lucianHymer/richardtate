@@ -71,7 +71,7 @@ func main() {
 		cfg.Server.URL, cfg.Client.APIBindAddress, cfg.Client.Debug)
 
 	// Create WebRTC client
-	webrtcClient := webrtc.New(cfg.Server.URL+"/api/v1/stream/signal", log, handleDataChannelMessage)
+	webrtcClient := webrtc.New(cfg.Server.URL+"/api/v1/stream/signal", cfg, log, handleDataChannelMessage)
 
 	// Connect to server
 	log.Info("Connecting to server...")

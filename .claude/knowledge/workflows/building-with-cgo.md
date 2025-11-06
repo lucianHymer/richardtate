@@ -152,3 +152,77 @@ The `./scripts/build-mac.sh` script automatically detects locally-built RNNoise 
 **Related**: Updated 2025-11-06 for RNNoise auto-detection
 
 ---
+
+## Client Transcription Display
+
+**Purpose**: Display real-time transcriptions in terminal as they arrive from server.
+
+### Implementation
+
+**Location**: `client/cmd/client/main.go` in `handleDataChannelMessage()` function
+
+**Message Types**:
+- `MessageTypeTranscriptFinal` - Shows "✅ {text}" for completed transcriptions
+- `MessageTypeTranscriptPartial` - Shows "📝 [partial] {text}" for partial results (future use)
+
+**Flow**:
+1. WebRTC DataChannel receives message from server
+2. Unmarshal `protocol.TranscriptData` from JSON
+3. Check message type
+4. Print to stdout with appropriate emoji prefix
+
+**Code Example**:
+```go
+func handleDataChannelMessage(msg protocol.Message) {
+    if msg.Type == protocol.MessageTypeTranscriptFinal {
+        var data protocol.TranscriptData
+        json.Unmarshal([]byte(msg.Data), &data)
+        fmt.Printf("✅ %s\n", data.Text)
+    }
+}
+```
+
+### Output Format
+
+**Final Transcription**:
+```
+✅ This is a completed transcription.
+✅ This is another chunk.
+```
+
+**Partial Transcription** (future):
+```
+📝 [partial] This is being transcribed...
+```
+
+### Design Decisions
+
+**Why Terminal Output**:
+- Simple to implement
+- No UI complexity
+- Immediate visual feedback
+- Easy to pipe to other tools
+
+**Why Not Accumulated**:
+- Each chunk printed separately
+- Debug log handles full session accumulation
+- Terminal keeps natural chronological flow
+
+**Errors Go to Stderr**:
+- Transcription errors logged separately
+- Doesn't pollute transcription output
+- Easy to filter with `2>/dev/null`
+
+### Future Enhancements
+
+1. **Session accumulation**: Display full session text at end
+2. **Timestamps**: Add time markers for each chunk
+3. **Formatting**: Word wrap, indentation, etc.
+4. **Color coding**: Different colors for partial vs final
+5. **Interactive editing**: Allow corrections before insertion
+
+**Files**: client/cmd/client/main.go
+
+**Related**: Session 13 (2025-11-06)
+
+---

@@ -10,7 +10,11 @@ System design, component relationships, and structural decisions.
 
 - [WebRTC Reconnection System](architecture/webrtc-reconnection-system.md) - Complete reconnection architecture with automatic recovery and 99% data integrity *(Updated: 2025-11-05)*
 - [Transcription Pipeline Architecture](architecture/transcription-pipeline.md) - Real-time pipeline with RNNoise noise suppression, VAD-based smart chunking, and Whisper.cpp transcription *(Updated: 2025-11-06)*
-- [Logging System Architecture](architecture/logging-system.md) - Custom logging system with contextual tagging and debug mode control *(Updated: 2025-11-06)*
+- [Per-Client Pipeline](architecture/per-client-pipeline.md) - Client-controlled transcription pipelines with custom VAD settings per connection *(Updated: 2025-11-06)*
+- [VAD Calibration API](architecture/vad-calibration-api.md) - API-driven calibration architecture for UI integration *(Updated: 2025-11-06)*
+- [Logging System Architecture](architecture/logging-system.md) - Unified structured logging system with log levels and structured fields *(Updated: 2025-11-06)*
+- [Debug Log System](architecture/debug-log-system.md) - Persistent transcription logging with 8MB rolling rotation *(Updated: 2025-11-06)*
+- [Hammerspoon Integration](architecture/hammerspoon-integration.md) - System-wide voice transcription with direct text insertion *(Updated: 2025-11-06)*
 
 ## Dependencies
 
@@ -29,6 +33,7 @@ Coding patterns, conventions, and project-specific approaches.
 How to perform common tasks and operations in this project.
 
 - [Building with CGO Dependencies](workflows/building-with-cgo.md) - Critical workflows for building server with Whisper.cpp and RNNoise *(Updated: 2025-11-06)*
+- [VAD Calibration Wizard](workflows/vad-calibration.md) - Interactive wizard for calibrating Voice Activity Detection threshold *(Updated: 2025-11-06)*
 
 ## Gotchas
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
+	"github.com/lucianHymer/streaming-transcription/client/internal/config"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
@@ -15,6 +16,7 @@ import (
 // Client handles WebRTC connection to the server
 type Client struct {
 	serverURL     string
+	config        *config.Config
 	logger        *logger.ContextLogger
 	pc            *webrtc.PeerConnection
 	dataChannel   *webrtc.DataChannel
@@ -55,9 +57,10 @@ type bufferedChunk struct {
 }
 
 // New creates a new WebRTC client
-func New(serverURL string, log *logger.Logger, onMessage func(msg *protocol.Message)) *Client {
+func New(serverURL string, cfg *config.Config, log *logger.Logger, onMessage func(msg *protocol.Message)) *Client {
 	return &Client{
 		serverURL:            serverURL,
+		config:               cfg,
 		logger:               log.With("webrtc"),
 		onMessage:            onMessage,
 		maxReconnectAttempts: 10,
@@ -366,11 +369,26 @@ func (c *Client) SendPing() error {
 	return c.SendMessage(msg)
 }
 
-// SendControlStart sends a start command to the server to begin transcription
+// SendControlStart sends a start command with VAD settings to the server to begin transcription
 func (c *Client) SendControlStart() error {
+	// Create control start data with VAD settings from config
+	controlData := protocol.ControlStartData{
+		VADEnergyThreshold: c.config.Transcription.VAD.EnergyThreshold,
+		SilenceThresholdMs: c.config.Transcription.VAD.SilenceThresholdMs,
+		MinChunkDurationMs: c.config.Transcription.VAD.MinChunkDurationMs,
+		MaxChunkDurationMs: c.config.Transcription.VAD.MaxChunkDurationMs,
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(controlData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal control data: %w", err)
+	}
+
 	msg := &protocol.Message{
 		Type:      protocol.MessageTypeControlStart,
 		Timestamp: time.Now().UnixMilli(),
+		Data:      json.RawMessage(data),
 	}
 	return c.SendMessage(msg)
 }

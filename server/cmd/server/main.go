@@ -62,8 +62,9 @@ func main() {
 		})
 	}
 
-	// Initialize transcription pipeline
-	pipelineConfig := transcription.PipelineConfig{
+	// Create WebRTC manager config
+	// Note: VAD settings now come from each client, not server config
+	managerConfig := webrtcmgr.ManagerConfig{
 		WhisperConfig: transcription.WhisperConfig{
 			ModelPath: cfg.Transcription.ModelPath,
 			Language:  cfg.Transcription.Language,
@@ -71,23 +72,11 @@ func main() {
 			Logger:    log,
 		},
 		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
-		SilenceThreshold:   time.Duration(cfg.VAD.SilenceThresholdMs) * time.Millisecond,
-		MinChunkDuration:   time.Duration(cfg.VAD.MinChunkDurationMs) * time.Millisecond,
-		MaxChunkDuration:   time.Duration(cfg.VAD.MaxChunkDurationMs) * time.Millisecond,
-		VADEnergyThreshold: cfg.VAD.EnergyThreshold,
-		ResultChannelSize:  10,
-		EnableDebugWAV:     cfg.Transcription.EnableDebugWAV,
+		EnableDebugWAV:   cfg.Transcription.EnableDebugWAV,
 	}
 
-	pipeline, err := transcription.NewTranscriptionPipeline(pipelineConfig)
-	if err != nil {
-		log.Fatal("Failed to initialize transcription pipeline: %v", err)
-	}
-	defer pipeline.Close()
-	log.Info("Transcription pipeline initialized with model: %s", cfg.Transcription.ModelPath)
-
-	// Create WebRTC manager
-	webrtcManager := webrtcmgr.New(log, iceServers, pipeline)
+	// Create WebRTC manager (no global pipeline - each peer creates their own)
+	webrtcManager := webrtcmgr.New(log, iceServers, managerConfig)
 	log.Info("WebRTC manager initialized with %d ICE servers", len(iceServers))
 
 	// Create API server

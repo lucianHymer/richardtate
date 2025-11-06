@@ -8,7 +8,11 @@ System design, component relationships, and structural decisions.
 
 @architecture/webrtc-reconnection-system.md
 @architecture/transcription-pipeline.md
+@architecture/per-client-pipeline.md
+@architecture/vad-calibration-api.md
 @architecture/logging-system.md
+@architecture/debug-log-system.md
+@architecture/hammerspoon-integration.md
 
 ## Dependencies
 
@@ -27,6 +31,7 @@ Coding patterns, conventions, and project-specific approaches.
 How to perform common tasks and operations in this project.
 
 @workflows/building-with-cgo.md
+@workflows/vad-calibration.md
 
 ## Gotchas
 

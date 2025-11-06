@@ -149,44 +149,24 @@ func (w *Wizard) Run(clientConfigPath string, autoSave bool) error {
 	fmt.Printf("     (~%d%% of background frames, ~%d%% of speech frames above threshold)\n\n",
 		backgroundFramesAboveThreshold, speechFramesAboveThreshold)
 
-	// Save to config
-	// Auto-detect server config path
-	defaultConfigPath := "config.yaml"
-	if _, err := os.Stat("server/config.yaml"); err == nil {
-		defaultConfigPath = "server/config.yaml"
-	} else if _, err := os.Stat("../server/config.yaml"); err == nil {
-		defaultConfigPath = "../server/config.yaml"
-	}
-
-	var serverConfigPath string
+	// Save to CLIENT config (not server config anymore)
 	if autoSave {
-		fmt.Printf("  💾 Enter server config path [%s]: ", defaultConfigPath)
-		fmt.Scanln(&serverConfigPath)
-		if serverConfigPath == "" {
-			serverConfigPath = defaultConfigPath
-		}
-
-		if err := w.updateServerConfig(serverConfigPath, recommendedThreshold); err != nil {
+		if err := w.updateClientConfig(clientConfigPath, recommendedThreshold); err != nil {
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 		fmt.Println("  ✓ Config updated successfully!")
 	} else {
-		fmt.Print("  💾 Save to server config? [Y/n] ")
+		fmt.Print("  💾 Save to client config? [Y/n] ")
 		var response string
 		fmt.Scanln(&response)
 		if response == "" || response == "Y" || response == "y" {
-			fmt.Printf("  📄 Enter server config path [%s]: ", defaultConfigPath)
-			fmt.Scanln(&serverConfigPath)
-			if serverConfigPath == "" {
-				serverConfigPath = defaultConfigPath
-			}
-
-			if err := w.updateServerConfig(serverConfigPath, recommendedThreshold); err != nil {
+			if err := w.updateClientConfig(clientConfigPath, recommendedThreshold); err != nil {
 				return fmt.Errorf("failed to save config: %w", err)
 			}
 			fmt.Println("  ✓ Config updated successfully!")
+			fmt.Printf("  ℹ️  New threshold will be used on next recording session\n")
 		} else {
-			fmt.Printf("  ℹ️  Not saved. You can manually set energy_threshold: %.0f in server config.yaml\n", recommendedThreshold)
+			fmt.Printf("  ℹ️  Not saved. You can manually set transcription.vad.energy_threshold: %.0f in client config.yaml\n", recommendedThreshold)
 		}
 	}
 
@@ -265,8 +245,8 @@ func (w *Wizard) analyzeAudio(audioData []byte) (*AudioStatistics, error) {
 	return &stats, nil
 }
 
-// updateServerConfig updates the server config file with new threshold
-func (w *Wizard) updateServerConfig(configPath string, threshold float64) error {
+// updateClientConfig updates the client config file with new threshold
+func (w *Wizard) updateClientConfig(configPath string, threshold float64) error {
 	// Check if file exists first
 	if _, err := os.Stat(configPath); err != nil {
 		return fmt.Errorf("config file not found at '%s': %w", configPath, err)
@@ -284,12 +264,19 @@ func (w *Wizard) updateServerConfig(configPath string, threshold float64) error 
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Navigate to vad.energy_threshold
-	vad, ok := config["vad"].(map[string]interface{})
+	// Navigate to transcription.vad.energy_threshold
+	transcription, ok := config["transcription"].(map[string]interface{})
+	if !ok {
+		// Create transcription section if it doesn't exist
+		transcription = make(map[string]interface{})
+		config["transcription"] = transcription
+	}
+
+	vad, ok := transcription["vad"].(map[string]interface{})
 	if !ok {
 		// Create vad section if it doesn't exist
 		vad = make(map[string]interface{})
-		config["vad"] = vad
+		transcription["vad"] = vad
 	}
 
 	// Update threshold

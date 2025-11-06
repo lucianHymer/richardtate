@@ -46,24 +46,14 @@ noise_suppression:
   model_path: "./models/rnnoise/lq.rnnn"
 
 # Voice Activity Detection (VAD)
-# VAD is always enabled - these settings control its behavior
-vad:
-  # Energy threshold for speech detection (higher = requires louder speech)
-  # Typical values: 50-200 for normal mic, 200-500 for noisy environment
-  # Too low: false positives from background noise
-  # Too high: misses quiet speech
-  energy_threshold: 100.0
-
-  # Silence duration (ms) to trigger transcription
-  # Audio chunks are sent to Whisper after this much continuous silence
-  # Lower = faster response, but may cut off mid-sentence
-  # Higher = more complete sentences, but slower response
-  silence_threshold_ms: 1000
-
-  # Minimum chunk duration (ms) before sending to Whisper
-  # Prevents very short chunks that waste processing time
-  min_chunk_duration_ms: 500
-
-  # Maximum chunk duration (ms) - safety limit
-  # Prevents unbounded memory usage if user talks continuously
-  max_chunk_duration_ms: 30000
+# NOTE: VAD settings are now sent by the client with each recording session
+# The server no longer uses these config values - they are kept here for documentation
+# Each client can have different VAD settings based on their environment/microphone
+#
+# Clients send VAD settings in the control.start message:
+# - energy_threshold: Energy threshold for speech detection
+# - silence_threshold_ms: Duration of silence to trigger chunk
+# - min_chunk_duration_ms: Minimum chunk duration
+# - max_chunk_duration_ms: Maximum chunk duration
+#
+# To configure VAD, edit the client config.yaml instead

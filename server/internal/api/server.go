@@ -203,35 +203,64 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 				int16(audioData.Data[8])|int16(audioData.Data[9])<<8)
 		}
 
-		// Pass to transcription pipeline
-		pipeline := s.webrtcManager.GetPipeline()
+		// Pass to this peer's transcription pipeline
+		pipeline := s.webrtcManager.GetPeerPipeline(peerID)
 		if pipeline != nil && pipeline.IsActive() {
 			if err := pipeline.ProcessChunk(audioData.Data, msg.Timestamp); err != nil {
 				s.logger.Error("Failed to process audio chunk: %v", err)
 			}
+		} else {
+			s.logger.Debug("No active pipeline for peer %s, dropping audio chunk", peerID)
 		}
 
 	case protocol.MessageTypeControlStart:
 		s.logger.Info("Received start command from peer %s", peerID)
 
-		// Start transcription pipeline
-		pipeline := s.webrtcManager.GetPipeline()
-		if pipeline != nil {
-			if err := pipeline.Start(); err != nil {
-				s.logger.Error("Failed to start pipeline: %v", err)
-			} else {
-				s.logger.Info("Transcription pipeline started for peer %s", peerID)
-
-				// Start result sender goroutine
-				go s.sendTranscriptionResults(peerID, peer, pipeline)
+		// Parse client settings from message data
+		var controlData protocol.ControlStartData
+		if msg.Data != nil {
+			if err := json.Unmarshal(msg.Data, &controlData); err != nil {
+				s.logger.Error("Failed to parse control start data: %v", err)
+				return
 			}
+			s.logger.Info("Client settings: VAD=%.0f, Silence=%dms, Min=%dms, Max=%dms",
+				controlData.VADEnergyThreshold,
+				controlData.SilenceThresholdMs,
+				controlData.MinChunkDurationMs,
+				controlData.MaxChunkDurationMs)
+		} else {
+			s.logger.Warn("No settings provided in control.start, using defaults")
+			// Use default values if not provided
+			controlData = protocol.ControlStartData{
+				VADEnergyThreshold: 500.0,
+				SilenceThresholdMs: 1000,
+				MinChunkDurationMs: 500,
+				MaxChunkDurationMs: 30000,
+			}
+		}
+
+		// Create pipeline with client settings
+		pipeline, err := s.webrtcManager.CreatePipelineForPeer(peerID, &controlData)
+		if err != nil {
+			s.logger.Error("Failed to create pipeline: %v", err)
+			return
+		}
+
+		// Start the pipeline
+		if err := pipeline.Start(); err != nil {
+			s.logger.Error("Failed to start pipeline: %v", err)
+		} else {
+			s.logger.Info("Transcription pipeline started for peer %s", peerID)
+
+			// Start result sender goroutine
+			go s.sendTranscriptionResults(peerID, peer, pipeline)
 		}
 
 	case protocol.MessageTypeControlStop:
 		s.logger.Info("Received stop command from peer %s", peerID)
 
-		// Stop transcription pipeline
-		pipeline := s.webrtcManager.GetPipeline()
+		// Stop transcription pipeline for this peer
+		pipeline := s.webrtcManager.GetPeerPipeline(peerID)
 		if pipeline != nil {
 			if err := pipeline.Stop(); err != nil {
 				s.logger.Error("Failed to stop pipeline: %v", err)
