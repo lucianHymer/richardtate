@@ -190,6 +190,17 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 		s.logger.Debug("Received audio chunk: seq=%d, size=%d bytes",
 			audioData.SequenceID, len(audioData.Data))
 
+		// Debug first chunk to see what we actually got
+		if audioData.SequenceID == 0 && len(audioData.Data) >= 20 {
+			s.logger.Debug("First chunk, first 20 bytes (hex): %x", audioData.Data[:20])
+			s.logger.Debug("First chunk, first 5 samples (int16): %d %d %d %d %d",
+				int16(audioData.Data[0])|int16(audioData.Data[1])<<8,
+				int16(audioData.Data[2])|int16(audioData.Data[3])<<8,
+				int16(audioData.Data[4])|int16(audioData.Data[5])<<8,
+				int16(audioData.Data[6])|int16(audioData.Data[7])<<8,
+				int16(audioData.Data[8])|int16(audioData.Data[9])<<8)
+		}
+
 		// Pass to transcription pipeline
 		pipeline := s.webrtcManager.GetPipeline()
 		if pipeline != nil && pipeline.IsActive() {
