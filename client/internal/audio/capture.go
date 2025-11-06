@@ -125,7 +125,7 @@ func (c *Capturer) Start() error {
 		deviceConfig.Capture.Format, deviceConfig.Capture.Channels, deviceConfig.SampleRate)
 
 	// Data callback - called by malgo when audio data is available
-	firstCallback := true
+	callbackCount := 0
 	onRecvFrames := func(pSample2, pSample []byte, framecount uint32) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -134,38 +134,43 @@ func (c *Capturer) Start() error {
 			return
 		}
 
-		// Debug first few samples to check data sanity
-		if firstCallback && len(pSample) >= 20 {
-			firstCallback = false
-			fmt.Printf("\n📊 First audio data inspection:\n")
-			fmt.Printf("   Framecount: %d\n", framecount)
-			fmt.Printf("   pSample2 length: %d bytes\n", len(pSample2))
-			fmt.Printf("   pSample length: %d bytes\n", len(pSample))
+		callbackCount++
 
-			// Check which buffer has data
-			if len(pSample2) > 0 && len(pSample2) >= 20 {
-				fmt.Printf("   ⚠️  pSample2 has data! First 20 bytes (hex): ")
-				for i := 0; i < 20; i++ {
-					fmt.Printf("%02x ", pSample2[i])
-				}
-				fmt.Printf("\n")
-			}
+		// Calculate audio level (RMS) to detect if there's actual sound
+		var sum int64
+		sampleCount := 0
+		for i := 0; i+1 < len(pSample); i += 2 {
+			sample := int16(pSample[i]) | int16(pSample[i+1])<<8
+			sum += int64(sample) * int64(sample)
+			sampleCount++
+		}
 
-			if len(pSample) >= 20 {
-				fmt.Printf("   pSample first 20 bytes (hex): ")
-				for i := 0; i < 20; i++ {
-					fmt.Printf("%02x ", pSample[i])
-				}
-				fmt.Printf("\n")
+		var rms float64
+		if sampleCount > 0 {
+			rms = float64(sum) / float64(sampleCount)
+			rms = float64(int(rms * 100)) / 100.0 // Round to 2 decimals
+		}
 
-				// Interpret as int16 samples
-				fmt.Printf("   First 5 samples as int16: ")
-				for i := 0; i < 10 && i < len(pSample); i += 2 {
+		// Log every 10th callback if there's significant audio
+		if callbackCount%10 == 0 && rms > 100000 {
+			// Find min/max sample values
+			var minSample, maxSample int16
+			if len(pSample) >= 2 {
+				minSample = int16(pSample[0]) | int16(pSample[1])<<8
+				maxSample = minSample
+				for i := 0; i+1 < len(pSample); i += 2 {
 					sample := int16(pSample[i]) | int16(pSample[i+1])<<8
-					fmt.Printf("%d ", sample)
+					if sample < minSample {
+						minSample = sample
+					}
+					if sample > maxSample {
+						maxSample = sample
+					}
 				}
-				fmt.Printf("\n\n")
 			}
+
+			fmt.Printf("🎤 Audio level: RMS²=%.0f, range=[%d to %d], frames=%d, bytes=%d\n",
+				rms, minSample, maxSample, framecount, len(pSample))
 		}
 
 		// Append incoming data to buffer
