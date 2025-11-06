@@ -1,31 +1,45 @@
 # Hammerspoon Integration Architecture
 
-**Last Updated**: 2025-11-06 (Session 13)
+**Last Updated**: 2025-11-06 (Session 15 - Calibration UI added)
 
 ## Overview
-Complete Hammerspoon integration for system-wide voice transcription with direct text insertion at cursor. Provides magical UX where transcribed text appears directly in any application.
+Complete Hammerspoon integration for system-wide voice transcription with direct text insertion at cursor and visual calibration wizard. Provides magical UX where transcribed text appears directly in any application.
 
 ## Architecture Components
 
-### 1. Hammerspoon Lua Script
-**Location**: `hammerspoon/init.lua`
+### 1. Hammerspoon Lua Scripts
+**Locations**:
+- `hammerspoon/init.lua` - Main recording control
+- `hammerspoon/calibration.lua` - Visual calibration wizard
 
-**Purpose**: User-facing control layer for voice transcription
+**Purpose**: User-facing control layer for voice transcription and setup
 
-**Components**:
-- Hotkey binding (Ctrl+N)
+**Recording Components** (init.lua):
+- Hotkey binding (Ctrl+N) for recording
 - HTTP client for daemon control
 - WebSocket client for real-time transcriptions
 - Visual indicator (minimal canvas)
 - Text insertion via keystroke simulation
 
+**Calibration Components** (calibration.lua):
+- Hotkey binding (Ctrl+Alt+C) for calibration wizard
+- Canvas-based 3-step wizard UI (500x400px)
+- HTTP client for calibration endpoints
+- Visual energy comparison bars
+- Click-based interaction with Save/Cancel buttons
+
 ### 2. Client Daemon
 **Location**: `client/cmd/client/main.go`
 
-**Endpoints**:
+**Recording Endpoints**:
 - `POST /start` - Start recording session
 - `POST /stop` - Stop recording session
 - `GET /transcriptions` (WebSocket) - Stream transcription chunks
+
+**Calibration Endpoints** (see [VAD Calibration API](vad-calibration-api.md)):
+- `POST /api/calibrate/record` - Record audio and get energy stats
+- `POST /api/calibrate/calculate` - Calculate recommended threshold
+- `POST /api/calibrate/save` - Save threshold to config
 
 ### 3. Communication Flow
 ```
@@ -281,22 +295,119 @@ Must be running on `localhost:8081`:
 4. **Accessibility required**: Must grant permissions
 5. **macOS only**: Hammerspoon is macOS-specific
 
+## Calibration Wizard
+
+### Visual UI Design
+**Status**: ✅ Implemented (Session 15)
+**Location**: `hammerspoon/calibration.lua` (450 lines)
+
+Complete canvas-based calibration wizard accessed via **Ctrl+Alt+C** hotkey.
+
+### Wizard Workflow
+
+**Step 1: Background Recording** (Blue theme)
+- Canvas displays "Stay Silent" instructions
+- Records 5 seconds of ambient noise
+- Shows real-time progress bar (updates every 0.5s)
+- Displays energy statistics when complete
+
+**Step 2: Speech Recording** (Orange theme)
+- Canvas displays "Speak Normally" instructions
+- Records 5 seconds of speech
+- Shows real-time progress bar
+- Displays energy statistics when complete
+
+**Step 3: Results & Save** (Green theme)
+- Visual comparison bars (background P95 vs speech P5)
+- Calculated recommended threshold displayed
+- **Save** button - saves to config and closes wizard
+- **Cancel** button - discards results and closes wizard
+
+### Technical Implementation
+
+**Canvas-Based UI**:
+- Floating window (500x400px)
+- Dark theme with rounded corners
+- Color-coded steps (blue → orange → green)
+- Mouse click handlers for buttons
+- Real-time progress updates via timer
+
+**API Integration**:
+- Calls `POST /api/calibrate/record` for each phase
+- Calls `POST /api/calibrate/calculate` with both stats
+- Calls `POST /api/calibrate/save` when user clicks Save
+- Error handling with macOS notifications
+
+**State Management**:
+- Module-based singleton pattern
+- Cleanup on Hammerspoon reload
+- Proper resource disposal (timers, canvas, HTTP connections)
+
+### Why Canvas (Not WebView)
+
+**Advantages**:
+- **Simpler**: Pure Lua drawing (~450 lines total)
+- **Faster**: No browser engine overhead
+- **Native**: Matches macOS system appearance
+- **Lightweight**: No HTML/CSS/JS dependencies
+- **Portable**: Works on any macOS version
+
+**Comparison to WebView Approach**:
+- WebView would require HTML+CSS+JS files
+- More complex build/distribution
+- Heavier resource usage
+- Canvas is sufficient for simple 3-step wizard
+
+### Integration with CLI Wizard
+
+**Coexistence**: CLI calibration (`./client --calibrate`) and Hammerspoon wizard work independently
+
+**Differences**:
+- CLI: Terminal-based, text output, manual config update instructions
+- Hammerspoon: Visual UI, progress indicators, automatic config save
+
+**Shared Backend**: Both use same client API endpoints and calculation logic
+
 ## Troubleshooting
 
-### Text Not Inserting
+### Recording Issues
+
+**Text Not Inserting**:
 1. Check Hammerspoon has Accessibility permissions
 2. Verify cursor is in text input field
 3. Check Hammerspoon console for errors
 
-### Indicator Not Appearing
+**Indicator Not Appearing**:
 1. Check client daemon is running (`lsof -i :8081`)
 2. Check Hammerspoon console for HTTP errors
 3. Verify hotkey not conflicting with other apps
 
-### Chunks Arriving Late
+**Chunks Arriving Late**:
 1. Normal: 1-3 second delay expected
 2. Check network latency to server
 3. Verify server is not overloaded
+
+### Calibration Issues
+
+**Wizard Not Opening**:
+1. Check client daemon is running
+2. Verify Ctrl+Alt+C hotkey not conflicting
+3. Check Hammerspoon console for Lua errors
+
+**Recording Fails**:
+1. Check microphone permissions for Hammerspoon
+2. Verify audio device configured in client config
+3. Check Hammerspoon console for HTTP errors
+
+**Save Button Does Nothing**:
+1. Check client config file is writable
+2. Verify config path in client.yaml is correct
+3. Check macOS notifications for error messages
+
+**Threshold Seems Wrong**:
+1. Ensure quiet environment for background recording
+2. Speak normally (not whispering or shouting) for speech
+3. Re-run calibration if environment changes
 
 ## Future Enhancements
 
@@ -310,14 +421,16 @@ Must be running on `localhost:8081`:
 ## Related Files
 
 **Implementation**:
-- `hammerspoon/init.lua` - Main Hammerspoon script (150 lines)
+- `hammerspoon/init.lua` - Main recording control (150 lines)
+- `hammerspoon/calibration.lua` - Calibration wizard (450 lines)
 - `hammerspoon/install.sh` - Installation script
 - `hammerspoon/README.md` - User documentation
 
 **Client Integration**:
 - `client/cmd/client/main.go` - HTTP endpoints and WebSocket handler
-- `client/internal/api/server.go` - API server implementation
+- `client/internal/api/server.go` - API server implementation with calibration endpoints
 
 **Related Systems**:
+- [VAD Calibration API](vad-calibration-api.md) - Calibration endpoint architecture
 - [Debug Log System](debug-log-system.md) - Logs all transcriptions for recovery
 - [WebRTC Client](../workflows/building-with-cgo.md) - Audio capture and streaming

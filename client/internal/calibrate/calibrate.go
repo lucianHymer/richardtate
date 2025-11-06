@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
-	"gopkg.in/yaml.v3"
 )
 
 // AudioStatistics holds energy statistics from server
@@ -246,53 +244,9 @@ func (w *Wizard) analyzeAudio(audioData []byte) (*AudioStatistics, error) {
 }
 
 // updateClientConfig updates the client config file with new threshold
+// Uses shared config.UpdateVADThreshold to ensure consistency with API calibration
 func (w *Wizard) updateClientConfig(configPath string, threshold float64) error {
-	// Check if file exists first
-	if _, err := os.Stat(configPath); err != nil {
-		return fmt.Errorf("config file not found at '%s': %w", configPath, err)
-	}
-
-	// Read existing config
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config file '%s': %w", configPath, err)
-	}
-
-	// Parse YAML
-	var config map[string]interface{}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse config file: %w", err)
-	}
-
-	// Navigate to transcription.vad.energy_threshold
-	transcription, ok := config["transcription"].(map[string]interface{})
-	if !ok {
-		// Create transcription section if it doesn't exist
-		transcription = make(map[string]interface{})
-		config["transcription"] = transcription
-	}
-
-	vad, ok := transcription["vad"].(map[string]interface{})
-	if !ok {
-		// Create vad section if it doesn't exist
-		vad = make(map[string]interface{})
-		transcription["vad"] = vad
-	}
-
-	// Update threshold
-	vad["energy_threshold"] = threshold
-
-	// Write back to file
-	output, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, output, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
+	return config.UpdateVADThreshold(configPath, threshold)
 }
 
 // visualizeComparison shows a visual comparison of background vs speech energy

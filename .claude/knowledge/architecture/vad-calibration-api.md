@@ -1,29 +1,41 @@
 # VAD Calibration API Architecture
 
+**Status**: ✅ Implemented
 **Last Updated**: 2025-11-06
 
 ## Overview
-Architecture for transitioning VAD calibration from a separate client launch mode to API endpoints, enabling UI-driven calibration and better user experience.
+Complete API-based VAD calibration system enabling UI-driven calibration through client daemon endpoints. Supports both terminal CLI and Hammerspoon visual wizards without requiring client restart.
 
-## Current Limitation
-The calibration is currently a separate client launch mode (--calibrate flag) which requires:
-- Restarting the client to run calibration
-- Terminal-only interface
-- No real-time feedback
-- Static wizard-like flow
+## Implementation Status
 
-## Proposed API Architecture
+### ✅ Completed
+- Client API endpoints for recording and calculation
+- Stateless recording endpoint (Hammerspoon controls phase)
+- Threshold calculation endpoint with P95 × 1.5 logic
+- Config save endpoint with YAML updates
+- Hammerspoon visual calibration wizard
+- RNNoise processing in calibration (matches production)
+
+### 📋 Future Enhancements
+- WebSocket endpoint for real-time energy streaming
+- Web UI calibration wizard
+- Multiple calibration profiles
+
+## API Architecture
 
 ### Client-Side Endpoints
-The calibration should be exposed as API endpoints on the client daemon:
+Calibration exposed as HTTP endpoints on client daemon (localhost:8081):
 
 #### POST /api/calibrate/record
-Records and analyzes audio for background or speech phase.
+**Status**: ✅ Implemented
+
+Records audio for specified duration and returns energy statistics.
+
+**Key Design**: Stateless - endpoint doesn't know if it's recording background or speech. UI (Hammerspoon/CLI) decides the phase and interprets results.
 
 **Request**:
 ```json
 {
-  "phase": "background" | "speech",
   "duration_seconds": 5
 }
 ```
@@ -39,13 +51,57 @@ Records and analyzes audio for background or speech phase.
 }
 ```
 
-#### POST /api/calibrate/save
-Saves recommended threshold to config file.
+**Implementation**:
+- Uses existing audio capture infrastructure
+- Sends audio to server's `/api/v1/analyze-audio` (includes RNNoise processing)
+- Returns raw statistics for UI to interpret
+
+#### POST /api/calibrate/calculate
+**Status**: ✅ Implemented
+
+Calculates recommended threshold from background and speech statistics.
 
 **Request**:
 ```json
 {
-  "threshold": 184.2
+  "background_stats": {
+    "min": 12.3,
+    "max": 89.4,
+    "avg": 45.2,
+    "p5": 34.5,
+    "p95": 78.1
+  },
+  "speech_stats": {
+    "min": 234.5,
+    "max": 1823.7,
+    "avg": 654.3,
+    "p5": 290.2,
+    "p95": 1456.8
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "recommended_threshold": 117.15
+}
+```
+
+**Calculation Logic**: `background_p95 × 1.5`
+- Balances conservative (fewer false positives) vs sensitive (fewer false negatives)
+- Keeps threshold logic in Go (testable, consistent with CLI wizard)
+- UI receives final recommendation (doesn't need to know formula)
+
+#### POST /api/calibrate/save
+**Status**: ✅ Implemented
+
+Saves threshold to client config YAML file.
+
+**Request**:
+```json
+{
+  "threshold": 117.15
 }
 ```
 
@@ -57,7 +113,15 @@ Saves recommended threshold to config file.
 }
 ```
 
-#### GET /api/calibrate/stream (WebSocket - Optional)
+**Implementation**:
+- Updates `transcription.vad.energy_threshold` in client config (nested structure)
+- Uses shared `config.UpdateVADThreshold()` function (same code as CLI calibration)
+- YAML parsing preserves comments and structure
+- Returns full path for user confirmation
+
+#### GET /api/calibrate/stream (WebSocket)
+**Status**: 📋 Future Enhancement
+
 Real-time energy levels during recording for visual feedback.
 
 **Message Format**:
@@ -112,25 +176,123 @@ The client should handle calibration because:
 - Updates `client/internal/config/config.go` with results
 - Server's `/api/v1/analyze-audio` endpoint remains unchanged
 
-## Implementation Path
+## Hammerspoon Integration
 
-### Phase 1: Core API
-1. Move calibration logic to API handler
-2. Create `/api/calibrate/record` endpoint
-3. Create `/api/calibrate/save` endpoint
-4. Keep existing CLI interface as wrapper
+### Visual Calibration Wizard
+**Status**: ✅ Implemented
+**Location**: `hammerspoon/calibration.lua` (450 lines)
 
-### Phase 2: Real-Time Feedback
-1. Add WebSocket endpoint for energy streaming
-2. Implement buffered energy calculation
-3. Add live speech detection feedback
+Complete canvas-based calibration UI for macOS:
 
-### Phase 3: UI Integration
-1. Web UI calibration wizard
-2. Hammerspoon calibration dialog
-3. Settings persistence and profiles
+**Design Features**:
+- 3-step wizard: Background → Speech → Results
+- Canvas-based floating window (500x400px)
+- Dark theme matching macOS aesthetic
+- Real-time progress indicators (updates every 0.5s)
+- Visual energy comparison bars
+- Click-based interaction (mouse events on canvas)
+
+**User Flow**:
+1. Press **Ctrl+Alt+C** to open calibration wizard
+2. **Step 1** (Blue theme): "Stay silent" → Records 5s background → Shows stats
+3. **Step 2** (Orange theme): "Speak normally" → Records 5s speech → Shows stats
+4. **Step 3** (Green theme): Visual bars → Recommended threshold → Save/Cancel buttons
+
+**Why Canvas (Not WebView)**:
+- Simpler: Pure Lua drawing (~450 lines vs HTML+CSS+JS)
+- Faster: No browser engine overhead
+- Native: Matches macOS system look
+- Lightweight: Minimal dependencies
+
+**Integration**:
+- Hotkey: Ctrl+Alt+C (configurable in init.lua)
+- Module-based: `require("calibration")` in init.lua
+- Error handling with macOS native notifications
+- Cleanup on Hammerspoon reload
+
+**Files**:
+- `hammerspoon/calibration.lua` - Complete wizard implementation
+- `hammerspoon/init.lua` - Integration and hotkey binding
+
+## Implementation Details
+
+### API Constructor Changes
+**Breaking Change**: `api.New()` now requires `*config.Config` parameter
+
+**Rationale**:
+- Needed for server URL conversion (WebSocket ws:// prefix)
+- Required for audio device configuration in calibration
+- Provides access to all client settings
+
+**Migration**:
+```go
+// Old
+apiServer := api.New(logger, webrtcClient, debugLog)
+
+// New
+apiServer := api.New(cfg, logger, webrtcClient, debugLog)
+```
+
+### Server-Side RNNoise Processing
+**Critical**: Calibration endpoint applies RNNoise processing before calculating energy statistics
+
+**Implementation** (server/internal/api/server.go):
+- API server stores `rnnoiseModelPath` from config
+- API server stores `baseLogger` for creating new components
+- `/api/v1/analyze-audio` creates temporary RNNoise processor per request
+- Processes audio through RNNoise before calculating energy
+- Falls back to raw audio if RNNoise unavailable or errors
+- Properly cleans up processor with defer
+
+**Why Temporary Processor**:
+- Calibration is infrequent (setup only)
+- Simpler lifecycle management (no caching needed)
+- No state to manage between requests
+- Clean separation from production pipelines
+
+**Result**: Calibration threshold recommendations match what production VAD actually sees
+
+### Stateless Design
+**Key Decision**: Recording endpoint is phase-agnostic
+
+**Benefits**:
+1. **Client flexibility**: Hammerspoon/CLI decides what each recording means
+2. **Simpler API**: Endpoint just captures audio and returns stats
+3. **Reusability**: Could record 10 samples and pick best background/speech
+4. **UI control**: All wizard logic lives in UI layer (Hammerspoon/CLI)
+
+**Calculation Separation**: Threshold calculation is separate endpoint (`/api/calibrate/calculate`)
+- Go code maintains calculation logic (testable, version-controlled)
+- UI doesn't need to know formula (just displays recommendation)
+- Consistent between CLI wizard and Hammerspoon UI
+
+## Performance Characteristics
+
+### Latency
+- **Record 5s audio**: ~5 seconds + 100-200ms processing
+- **Calculate threshold**: < 10ms (simple math)
+- **Save to config**: < 50ms (YAML parsing + write)
+- **Total wizard flow**: ~15-20 seconds (10s recording + UI transitions)
+
+### Resource Usage
+- **Temporary RNNoise processor**: Created per-request, cleaned up immediately
+- **Audio buffer**: 5 seconds at 16kHz = 160KB max
+- **Memory overhead**: Minimal (~200KB per calibration session)
+
+### Reliability
+- **Config backup**: Creates backup before modification
+- **Error recovery**: Graceful fallback to raw audio if RNNoise fails
+- **UI state**: Properly cleanup on wizard close or Hammerspoon reload
+
+## Known Limitations
+
+1. **No real-time streaming**: WebSocket endpoint not yet implemented
+2. **Single profile**: Can't save multiple calibration profiles (home, office, etc.)
+3. **Fixed recording duration**: Hardcoded to 5 seconds
+4. **No validation mode**: Can't test current threshold before saving
 
 ## Related Systems
-- [VAD Calibration Workflow](../workflows/vad-calibration.md) - Current CLI implementation
-- [Client API Server](../architecture/client-api-server.md) - API infrastructure
+- [VAD Calibration Workflow](../workflows/vad-calibration.md) - CLI implementation details
+- [Hammerspoon Integration](../architecture/hammerspoon-integration.md) - Main recording UI
 - [Per-Client Pipeline](../architecture/per-client-pipeline.md) - How calibrated settings are used
+- [Transcription Gotchas](../gotchas/transcription-gotchas.md#vad-calibration-missing-rnnoise-processing) - RNNoise processing fix
