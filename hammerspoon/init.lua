@@ -4,11 +4,15 @@
 -- Load required extensions (use hs. prefix for safety)
 -- Some modules work with require(), others need hs. global access
 
+-- Load calibration module
+local calibration = require("calibration")
+
 -- Configuration
 local config = {
     daemonURL = "http://localhost:8081",
     wsURL = "ws://localhost:8081/transcriptions",
     hotkey = {mods = {"ctrl"}, key = "n"},
+    calibrateHotkey = {mods = {"ctrl", "alt"}, key = "c"},
 }
 
 -- State
@@ -187,21 +191,27 @@ local function toggleRecording()
     end
 end
 
--- Bind hotkey
+-- Bind hotkeys
 hs.hotkey.bind(config.hotkey.mods, config.hotkey.key, toggleRecording)
+hs.hotkey.bind(config.calibrateHotkey.mods, config.calibrateHotkey.key, function()
+    calibration.show()
+end)
 
 -- Cleanup on reload
 hs.hotkey.bind({"cmd", "alt", "ctrl"}, "r", function()
     if state.recording then
         stopRecording()
     end
+    calibration.close()
     hs.reload()
 end)
 
 -- Notification on load
 hs.notify.new({
     title = "Streaming Transcription",
-    informativeText = "Press Ctrl+N to start/stop recording"
+    informativeText = "Ctrl+N: Record | Ctrl+Alt+C: Calibrate"
 }):send()
 
-print("Streaming Transcription loaded. Press Ctrl+N to toggle recording.")
+print("Streaming Transcription loaded.")
+print("  Ctrl+N: Toggle recording")
+print("  Ctrl+Alt+C: Open calibration wizard")

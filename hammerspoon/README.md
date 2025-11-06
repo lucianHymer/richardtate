@@ -9,6 +9,7 @@ Simple hotkey-triggered voice transcription with direct text insertion.
 - **Visual indicator**: Small floating window shows recording status
 - **Works everywhere**: Any text field in any app (Obsidian, VSCode, Slack, browser, etc.)
 - **Automatic saving**: All transcriptions saved to debug log (`~/.streaming-transcription/debug.log`)
+- **Calibration UI**: Press `Ctrl+Alt+C` to open visual VAD calibration wizard
 
 ## Prerequisites
 
@@ -24,20 +25,22 @@ Simple hotkey-triggered voice transcription with direct text insertion.
 brew install --cask hammerspoon
 ```
 
-### 2. Copy Script to Hammerspoon Config
+### 2. Copy Scripts to Hammerspoon Config
 
 ```bash
 # Create Hammerspoon config directory if it doesn't exist
 mkdir -p ~/.hammerspoon
 
-# Copy the init.lua script
+# Copy the scripts
 cp /path/to/streaming-transcription/hammerspoon/init.lua ~/.hammerspoon/init.lua
+cp /path/to/streaming-transcription/hammerspoon/calibration.lua ~/.hammerspoon/calibration.lua
 ```
 
-**OR** symlink it (recommended for development):
+**OR** symlink them (recommended for development):
 
 ```bash
 ln -sf /path/to/streaming-transcription/hammerspoon/init.lua ~/.hammerspoon/init.lua
+ln -sf /path/to/streaming-transcription/hammerspoon/calibration.lua ~/.hammerspoon/calibration.lua
 ```
 
 ### 3. Grant Accessibility Permissions
@@ -54,7 +57,7 @@ Hammerspoon needs accessibility permissions to insert text:
 - Launch Hammerspoon (should show in menu bar)
 - Click Hammerspoon menu → **Reload Config** (or press `Cmd+Alt+Ctrl+R`)
 
-You should see a notification: "Streaming Transcription - Press Ctrl+N to start/stop recording"
+You should see a notification: "Streaming Transcription - Ctrl+N: Record | Ctrl+Alt+C: Calibrate"
 
 ## Usage
 
@@ -79,9 +82,39 @@ You should see a notification: "Streaming Transcription - Press Ctrl+N to start/
    - Indicator disappears
    - Final transcription saved to debug log
 
+### VAD Calibration
+
+**Important**: Before first use, calibrate Voice Activity Detection for your microphone:
+
+1. **Press `Ctrl+Alt+C`** to open the calibration wizard
+
+2. **Step 1 - Background Noise**:
+   - Click "Start Recording"
+   - Stay completely silent for 5 seconds
+   - Measures ambient noise in your environment
+
+3. **Step 2 - Speech**:
+   - Click "Start Recording"
+   - Speak normally and continuously for 5 seconds
+   - Content doesn't matter, just speak naturally
+
+4. **Step 3 - Results**:
+   - View visual comparison of background vs speech
+   - See recommended threshold
+   - Click "Save & Close" to apply
+
+5. **Done!** New threshold will be used on next recording session
+
+**When to recalibrate**:
+- Changed microphone
+- Moved to different environment
+- Noticing false positives (noise triggers transcription)
+- Noticing false negatives (speech not detected)
+
 ### Keyboard Shortcuts
 
 - `Ctrl+N` - Toggle recording (start/stop)
+- `Ctrl+Alt+C` - Open VAD calibration wizard
 - `Cmd+Alt+Ctrl+R` - Reload Hammerspoon config
 
 ## Configuration

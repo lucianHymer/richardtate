@@ -15,13 +15,16 @@ Real-time voice transcription system that streams audio to a server, processes i
 - Whisper transcription (large-v3-turbo model)
 - Client daemon with HTTP/WebSocket API
 - Hammerspoon integration with Ctrl+N hotkey
+- **Visual VAD calibration UI (Ctrl+Alt+C)**
 - Direct text insertion at cursor in ANY app
 - Debug logging with 8MB rotation
-- VAD calibration wizard
+- CLI calibration wizard (terminal)
 - Per-client pipeline settings
 - WebRTC reconnection with audio buffering
 
-**User Experience**: Press Ctrl+N → speak → text appears at cursor → press Ctrl+N again. Magic! ✨
+**User Experience**:
+- **First time**: Ctrl+Alt+C → visual calibration wizard → save threshold
+- **Recording**: Ctrl+N → speak → text appears at cursor → Ctrl+N again. Magic! ✨
 
 **⏳ V2 FEATURES (PLANNED)**:
 - Post-processing modes (casual, professional, Obsidian, code, email)
@@ -139,6 +142,18 @@ Response: 200 OK
 POST /stop
 Body: (none)
 Response: 200 OK
+
+POST /api/calibrate/record
+Body: {"duration_seconds": 5}
+Response: {"min": 12.3, "max": 89.4, "avg": 45.2, "p5": 34.5, "p95": 78.1, "sample_count": 500}
+
+POST /api/calibrate/calculate
+Body: {"background": {...stats}, "speech": {...stats}}
+Response: {"threshold": 184.2, "background_frames_above_percent": 5, "speech_frames_above_percent": 95, "explanation": "..."}
+
+POST /api/calibrate/save
+Body: {"threshold": 184.2}
+Response: {"success": true, "config_path": "/path/to/config.yaml"}
 ```
 
 #### WebSocket Endpoint
@@ -234,6 +249,7 @@ local config = {
     daemonURL = "http://localhost:8081",
     wsURL = "ws://localhost:8081/transcriptions",
     hotkey = {mods = {"ctrl"}, key = "n"},
+    calibrateHotkey = {mods = {"ctrl", "alt"}, key = "c"},
 }
 ```
 
@@ -286,6 +302,17 @@ cd hammerspoon
 ```
 
 ### VAD Calibration
+
+**Visual UI (Recommended)**:
+```
+Press Ctrl+Alt+C in Hammerspoon
+→ 3-step visual wizard
+→ Click-based interaction
+→ Visual energy comparison
+→ One-click save
+```
+
+**CLI (Alternative)**:
 ```bash
 # Interactive mode
 ./client --calibrate
@@ -578,41 +605,142 @@ type ControlStartData struct {
 
 ---
 
-### Next Steps - Calibration API Endpoints (Planned)
+### Session 15 (Nov 6, 2025) - Hammerspoon Calibration UI
 
-#### Current State
-- Calibration works via `./client --calibrate` flag (terminal wizard)
-- Requires restarting client to run calibration
-- No way for Hammerspoon to trigger calibration
+#### What Was Accomplished
+**Visual Calibration Wizard - Making VAD Calibration User-Friendly**
 
-#### Planned Implementation
-**Add calibration API endpoints to client daemon** so Hammerspoon can trigger calibration without restart.
+Implemented a complete Hammerspoon-based calibration UI with client API endpoints, eliminating the need to restart the client for calibration.
 
-**Proposed Endpoints**:
+**API Endpoints** (`client/internal/api/server.go`):
+- `POST /api/calibrate/record` - Records audio for specified duration, returns energy statistics (stateless)
+- `POST /api/calibrate/calculate` - Calculates recommended threshold from background and speech stats
+- `POST /api/calibrate/save` - Saves threshold to client config file
 
-```http
+**Hammerspoon UI** (`hammerspoon/calibration.lua` - 450 lines):
+- 3-step visual wizard (Background → Speech → Results)
+- Real-time recording progress indicators
+- Visual energy comparison bars
+- One-click save to config
+- Hotkey: **Ctrl+Alt+C** to launch
+
+**Architecture Benefits**:
+1. **Stateless Recording**: `/record` endpoint doesn't need to know if it's background or speech
+2. **Server-Side Calculation**: Threshold logic (P95 × 1.5, safety checks) stays in Go
+3. **Clean Separation**: Hammerspoon handles UI/UX, client API handles logic
+4. **No Restart Needed**: Calibrate anytime while daemon is running
+
+**User Experience**:
+- Press **Ctrl+Alt+C** → Visual wizard opens
+- Step 1: "Stay silent" → Click "Start Recording" → 5 seconds → Background measured
+- Step 2: "Speak normally" → Click "Start Recording" → 5 seconds → Speech measured
+- Step 3: See visual comparison → Recommended threshold displayed → Click "Save & Close"
+- Done! New threshold applied on next recording session
+
+**Implementation Details**:
+- Canvas-based UI (500x400px floating window)
+- Dark theme matching macOS aesthetic
+- Animated recording progress
+- Visual energy bars for comparison
+- Error handling with notifications
+
+#### Critical Things to Know
+
+**1. API Architecture**
+- **Stateless design**: Each endpoint is independent
+- `/record` → `/calculate` → `/save` workflow
+- Client API now requires `*config.Config` parameter in constructor
+
+**2. Hammerspoon Integration**
+- **New hotkey**: Ctrl+Alt+C for calibration
+- **Module-based**: `require("calibration")` in init.lua
+- **Floating window**: Level "floating", joins all spaces
+- **Click handling**: Canvas mouse events for button clicks
+
+**3. Visual Design**
+- **Step 1 (Background)**: Blue theme, "stay silent" instructions
+- **Step 2 (Speech)**: Orange theme, "speak normally" instructions
+- **Step 3 (Results)**: Green theme, visual bars, save/cancel buttons
+- **Recording state**: Progress counter updates every 0.5s
+
+**4. Configuration**
+- Saves to `~/.streaming-transcription/config.yaml` by default
+- Can override with `CLIENT_CONFIG_PATH` environment variable
+- Updates `transcription.vad_energy_threshold` field
+- Settings apply on next recording session (not immediately)
+
+**5. CLI Calibration Still Works**
+- `./client --calibrate` terminal wizard unchanged
+- Both CLI and UI use same underlying logic
+- Choose based on preference (terminal vs visual)
+
+#### Files Created/Modified
+
+**Created**:
+- `hammerspoon/calibration.lua` - Visual calibration wizard (450 lines)
+
+**Modified**:
+- `client/internal/api/server.go` - Added 3 calibration endpoints (+300 lines)
+- `client/cmd/client/main.go` - Pass config to API server constructor
+- `hammerspoon/init.lua` - Integrated calibration module, added Ctrl+Alt+C hotkey
+
+**API Endpoints**:
+```go
 POST /api/calibrate/record
-Body: {"phase": "background|speech", "duration_seconds": 5}
-Response: {"min": 12.3, "max": 89.4, "avg": 45.2, "p5": 34.5, "p95": 78.1}
+Request:  {"duration_seconds": 5}
+Response: {"min": 12.3, "max": 89.4, "avg": 45.2, "p5": 34.5, "p95": 78.1, "sample_count": 500}
+
+POST /api/calibrate/calculate
+Request:  {"background": {...stats}, "speech": {...stats}}
+Response: {"threshold": 184.2, "background_frames_above_percent": 5, "speech_frames_above_percent": 95, "explanation": "..."}
 
 POST /api/calibrate/save
-Body: {"threshold": 184.2}
-Response: {"success": true, "config_path": "/path/to/config.yaml"}
+Request:  {"threshold": 184.2}
+Response: {"success": true, "config_path": "/home/user/.streaming-transcription/config.yaml"}
 ```
 
-**Benefits**:
-- Hammerspoon can add "Calibrate Microphone" menu item
-- No client restart needed
-- Visual progress indicators possible
-- Real-time energy level display (future WebSocket endpoint)
+#### Design Decisions
 
-**Implementation Notes**:
-- Reuse existing `client/internal/calibrate/` logic
-- Wrap as HTTP handlers in `client/internal/api/server.go`
-- Keep `--calibrate` flag as CLI wrapper
-- Server's `/api/v1/analyze-audio` endpoint unchanged
+**Why Stateless /record Endpoint**:
+- Hammerspoon decides when to record background vs speech
+- Server doesn't need to maintain calibration state
+- Can re-record either phase without restarting wizard
+- Cleaner API design
 
-**See**: `.claude/knowledge/architecture/vad-calibration-api.md` for full design
+**Why Server-Side Calculation**:
+- Threshold logic (P95 × 1.5, safety margin) stays in Go
+- Consistent with terminal calibration wizard
+- Testable in Go (vs Lua)
+- Hammerspoon just displays results
+
+**Why Canvas UI (Not WebView)**:
+- Simpler: Pure Lua canvas drawing
+- Faster: No browser engine overhead
+- Native: Matches macOS visual style
+- Lightweight: ~450 lines vs HTML+CSS+JS
+
+**Why Separate Module**:
+- Keeps `init.lua` clean (main recording logic separate)
+- Reusable: `require("calibration")` pattern
+- Easier to maintain: Calibration code isolated
+- Can add more modules later (settings, history, etc.)
+
+#### Known Limitations
+
+1. **No Live Energy Meter**: Would require WebSocket streaming endpoint (future enhancement)
+2. **No Manual Threshold Adjustment**: Can only use calculated value (could add slider)
+3. **No Re-Record Option**: Must restart wizard to re-record (could add "Back" button)
+4. **No Profile Management**: Can't save multiple calibration profiles (future feature)
+
+#### Future Enhancements
+
+1. **WebSocket `/api/calibrate/stream`**: Live energy level display during recording
+2. **Manual Threshold Adjustment**: Slider to fine-tune recommended value
+3. **Multiple Profiles**: Save calibration profiles for different environments
+4. **Calibration History**: Track threshold changes over time
+5. **Test Mode**: Record and analyze without saving to verify threshold
+
+**See**: `.claude/knowledge/architecture/vad-calibration-api.md` for original design document
 
 ---
 
