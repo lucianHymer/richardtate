@@ -714,7 +714,438 @@ Remember: This replaces keyboard input for many workflows, so reliability and sp
 
 ---
 
-## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-06 Session 10 - CLIENT DISPLAY COMPLETE! 📺✅)
+## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-06 Session 11 - UNIFIED LOGGING SYSTEM! 📋✅)
+
+### 📅 **SESSION UPDATE: 2025-11-06 Session 11 - UNIFIED LOGGING SYSTEM!** 📋
+
+**TL;DR: Complete logging system refactoring! Client and server now share a unified structured logger with levels, component tags, and structured fields. All fmt.Printf scattered throughout client replaced with proper logging. Production-ready!**
+
+#### What We Accomplished This Session (Session 11)
+
+**🎯 MAJOR REFACTOR: Unified Structured Logging System**
+
+**Previous System (Session 10)**:
+- Server had structured logger in `server/internal/logger/`
+- Client had simple logger in `client/internal/logger/` without levels
+- `fmt.Printf` and `println` scattered throughout client code
+- No structured fields support
+
+**New System (Session 11)**:
+- Single shared logger in `shared/logger/`
+- Both client and server use same logging infrastructure
+- All logging uses structured approach with levels and component tags
+- Structured fields support for better parsing and JSON output
+
+---
+
+### Session 11 Accomplishments
+
+#### **1. ✅ Moved Logger to Shared Package**
+
+**Action**: Consolidated logging infrastructure into shared location
+
+**Changes**:
+- Copied `server/internal/logger/logger.go` → `shared/logger/logger.go`
+- Deleted `server/internal/logger/` directory
+- Deleted `client/internal/logger/` directory (old simple logger)
+- Updated all imports across 19 files (8 server, 4 client, rest docs/assets)
+
+**Why**:
+- Single source of truth for logging behavior
+- Consistent logging format across client and server
+- Shared location makes sense for shared infrastructure
+- Easier to maintain and extend
+
+---
+
+#### **2. ✅ Complete Client Logging Refactor**
+
+**Problem**: Client code had `fmt.Printf` and `println` calls scattered everywhere, no log levels, no structured logging.
+
+**Solution**: Replaced ALL informal logging with structured logger calls.
+
+**Files Refactored**:
+
+**`client/cmd/client/main.go`**:
+- Updated import to `shared/logger`
+- Removed old logger initialization (file-based, size limits)
+- Added simple `log := logger.New(cfg.Client.Debug)` initialization
+- Created global logger for message handler: `globalLog = log`
+- Updated `handleDataChannelMessage()`:
+  - Replaced `println("✓ Received pong...")` → `messageLog.Info("✓ Received pong...")`
+  - Replaced `fmt.Fprintf(os.Stderr, "❌ Failed...")` → `messageLog.Error("Failed...")`
+  - Changed unknown message type from `println` to `messageLog.Debug()`
+
+**`client/internal/audio/capture.go`** (MAJOR REFACTOR):
+- Added logger import: `shared/logger`
+- Added `logger *logger.ContextLogger` field to `Capturer` struct
+- Modified `New()` signature: added `log *logger.Logger` parameter
+- Created component logger: `logger: log.With("audio")`
+- Replaced device listing prints:
+  - `fmt.Println("\n=== Available Audio Devices ===")` → `c.logger.Info("=== Available Audio Devices ===")`
+  - `fmt.Printf("[%d] %s [DEFAULT]", ...)` → `c.logger.Info("[%d] %s [DEFAULT]", ...)`
+- Replaced device selection prints:
+  - `fmt.Printf("Using specified device: %s\n", ...)` → `c.logger.Info("Using specified device: %s", ...)`
+  - `fmt.Printf("⚠️  Warning: Device '%s' not found...")` → `c.logger.Warn("Device '%s' not found, using default", ...)`
+- Replaced config print:
+  - `fmt.Printf("Capture config: ...")` → `c.logger.Debug("Capture config: ...")`
+- Replaced audio level monitoring:
+  - `fmt.Printf("🎤 Audio level: RMS²=%.0f, range=[%d to %d]...")` → `c.logger.DebugWithFields("🎤 Audio level detected", map[string]interface{}{...})`
+  - Now uses structured fields for better parsing!
+- Replaced buffer full warning:
+  - `fmt.Printf("[WARN] Audio chunk buffer full...")` → `c.logger.Warn("Audio chunk buffer full, dropping chunk %d", ...)`
+- Replaced device configuration prints:
+  - `fmt.Printf("   Sample Rate: %d Hz\n", ...)` → `c.logger.InfoWithFields("🔍 Actual Device Configuration", map[string]interface{}{...})`
+  - Now uses structured fields!
+- Replaced sample rate warning:
+  - `fmt.Printf("⚠️  WARNING: Device is using %d Hz...")` → `c.logger.Warn("Device is using %d Hz, but we requested %d Hz - this will cause audio distortion", ...)`
+
+**`client/internal/webrtc/client.go`**:
+- Updated import to `shared/logger`
+
+**`client/internal/api/server.go`**:
+- Updated import to `shared/logger`
+
+---
+
+#### **3. ✅ Updated Server Imports**
+
+Updated all server files to use `shared/logger` instead of `server/internal/logger`:
+
+**Files Updated**:
+- `server/cmd/server/main.go`
+- `server/internal/api/server.go`
+- `server/internal/webrtc/manager.go`
+- `server/internal/transcription/whisper.go`
+- `server/internal/transcription/chunker.go`
+- `server/internal/transcription/rnnoise.go`
+- `server/internal/transcription/pipeline.go`
+- `server/internal/transcription/rnnoise_real.go`
+
+**Note**: Server transcription components still use manual `[Tag]` prefixes (like `[Whisper]`, `[Pipeline]`) with `log.Printf()` instead of ContextLogger. This is acceptable legacy style but could be migrated to ContextLogger in the future.
+
+---
+
+#### **4. ✅ Logger Features Available**
+
+**Log Levels**:
+- `Debug` - Debug messages (only when debug mode enabled)
+- `Info` - Information messages
+- `Warn` - Warning messages
+- `Error` - Error messages
+- `Fatal` - Fatal errors (exits program)
+
+**Component Tagging**:
+```go
+log := logger.New(debug)
+audioLog := log.With("audio")      // Creates [audio] tag
+webrtcLog := log.With("webrtc")    // Creates [webrtc] tag
+```
+
+**Structured Fields**:
+```go
+// Basic logging
+audioLog.Info("Starting audio capture")
+audioLog.Debug("Processing chunk: seq=%d", seqID)
+
+// Structured logging with fields
+audioLog.InfoWithFields("Device configured", map[string]interface{}{
+    "sample_rate": 16000,
+    "channels": 1,
+    "format": "S16",
+})
+```
+
+**Output Formats**:
+- **Text** (default): `2025/11/06 12:34:56.789012 [INFO] [audio] message | key=value`
+- **JSON** (configurable): `{"timestamp":"...","level":"INFO","component":"audio","message":"text","fields":{"key":"value"}}`
+
+**Configuration**:
+```go
+// Simple (text output, debug mode)
+log := logger.New(true)
+
+// Advanced (JSON output, custom config)
+log := logger.NewWithConfig(logger.Config{
+    Level:  logger.LevelInfo,
+    Format: logger.FormatJSON,
+    Output: os.Stdout,
+})
+```
+
+---
+
+#### **5. 📝 Files Modified**
+
+**Summary**: 19 files changed, 319 insertions(+), 293 deletions
+
+**Client** (4 files):
+- `client/cmd/client/main.go` - Updated imports, global logger setup, message handler logging
+- `client/internal/audio/capture.go` - Complete refactor with structured logging
+- `client/internal/webrtc/client.go` - Updated import
+- `client/internal/api/server.go` - Updated import
+
+**Server** (8 files):
+- `server/cmd/server/main.go` - Updated import
+- `server/internal/api/server.go` - Updated import
+- `server/internal/webrtc/manager.go` - Updated import
+- `server/internal/transcription/whisper.go` - Updated import
+- `server/internal/transcription/chunker.go` - Updated import
+- `server/internal/transcription/rnnoise.go` - Updated import
+- `server/internal/transcription/pipeline.go` - Updated import
+- `server/internal/transcription/rnnoise_real.go` - Updated import
+
+**Shared** (1 new package):
+- `shared/logger/logger.go` - Moved from server/internal/logger/
+
+**Documentation** (2 files):
+- `.claude/knowledge/architecture/logging-system.md` - Complete rewrite with unified logger docs
+- `.claude/knowledge/session.md` - Added logging refactoring entry
+
+**Additional Changes**:
+- `LICENSE` - Added MIT License
+- `assets/logo.png` - Updated logo (optimized: 846KB → 631KB)
+- `.gitignore` - Improved coverage
+
+---
+
+### 🚨 CRITICAL THINGS FOR TOMORROW'S TEAM (SESSION 11 NOTES)
+
+#### **1. Logger is Now in `shared/logger/`**
+
+**IMPORTANT**: When adding new components, import from `shared/logger`, NOT `server/internal/logger` or `client/internal/logger` (those don't exist anymore).
+
+**Correct**:
+```go
+import "github.com/lucianHymer/streaming-transcription/shared/logger"
+```
+
+**Wrong** (old paths, will fail):
+```go
+import "github.com/lucianHymer/streaming-transcription/server/internal/logger"
+import "github.com/lucianHymer/streaming-transcription/client/internal/logger"
+```
+
+---
+
+#### **2. Audio Capturer Signature Changed**
+
+**CRITICAL**: The `audio.New()` function now requires a logger parameter!
+
+**Old Signature** (Session 10):
+```go
+func New(chunkBufferSize int, deviceName string) (*Capturer, error)
+```
+
+**New Signature** (Session 11):
+```go
+func New(chunkBufferSize int, deviceName string, log *logger.Logger) (*Capturer, error)
+```
+
+**Usage**:
+```go
+log := logger.New(cfg.Client.Debug)
+capturer, err := audio.New(20, cfg.Audio.DeviceName, log)
+```
+
+**Why**: Audio capture now uses structured logging instead of `fmt.Printf` scattered everywhere.
+
+---
+
+#### **3. Use Structured Logging with Fields**
+
+**Best Practice**: For complex log data, use `*WithFields()` methods instead of formatting strings.
+
+**Bad** (old way):
+```go
+fmt.Printf("Device config: rate=%d, channels=%d, format=%v\n", rate, channels, format)
+```
+
+**Good** (new way):
+```go
+log.InfoWithFields("Device configured", map[string]interface{}{
+    "sample_rate": rate,
+    "channels": channels,
+    "format": format,
+})
+```
+
+**Why**:
+- Better for JSON output
+- Preserves data types
+- Easy to parse/aggregate
+- Production-ready
+
+**Example from audio/capture.go**:
+```go
+c.logger.DebugWithFields("🎤 Audio level detected", map[string]interface{}{
+    "rms_squared": rms,
+    "min_sample":  minSample,
+    "max_sample":  maxSample,
+    "frames":      framecount,
+    "bytes":       len(pSample),
+})
+```
+
+---
+
+#### **4. Component Tags are Consistent**
+
+**Client Component Tags**:
+- `[audio]` - Audio capture (client/internal/audio)
+- `[webrtc]` - WebRTC client (client/internal/webrtc)
+- `[api]` - API server (client/internal/api)
+- `[message]` - Message handler (client/cmd/client)
+
+**Server Component Tags**:
+- `[api]` - API server (server/internal/api)
+- `[webrtc]` - WebRTC manager (server/internal/webrtc)
+- `[Whisper]` - Whisper transcriber (manual tag, legacy style)
+- `[Pipeline]` - Transcription pipeline (manual tag, legacy style)
+- `[RNNoise]` - RNNoise processor (manual tag, legacy style)
+- `[SmartChunker]` - Smart chunker (manual tag, legacy style)
+
+**Note**: Server transcription components use manual `[Tag]` prefixes instead of ContextLogger. This works but is not as clean as using `log.With("component")`.
+
+---
+
+#### **5. JSON Output is Production-Ready**
+
+If you need JSON logging (for log aggregation, parsing, etc.), just change the config:
+
+```go
+log := logger.NewWithConfig(logger.Config{
+    Level:  logger.LevelInfo,
+    Format: logger.FormatJSON,  // Switch to JSON
+    Output: os.Stdout,
+})
+```
+
+**Output**:
+```json
+{"timestamp":"2025/11/06 12:34:56.789012","level":"INFO","component":"audio","message":"Device configured","fields":{"sample_rate":16000,"channels":1}}
+```
+
+This is useful for:
+- Cloud logging (CloudWatch, Stackdriver, etc.)
+- Log aggregation tools (ELK, Splunk, etc.)
+- Automated parsing and alerting
+
+---
+
+#### **6. No More `fmt.Printf` in Client!**
+
+**IMPORTANT**: All `fmt.Printf`, `println`, etc. have been removed from client code (except for transcription display output, which is intentional user-facing output).
+
+**If you add new code**:
+- ❌ DON'T use `fmt.Printf` for logging
+- ❌ DON'T use `println` for logging
+- ✅ DO use logger methods (`Info`, `Debug`, `Warn`, `Error`)
+- ✅ DO create component loggers with `log.With("component")`
+
+**Exception**: User-facing output like transcription display (`✅ transcribed text`) can still use `fmt.Printf` because that's intentional stdout output, not logging.
+
+---
+
+#### **7. Build Verified**
+
+**✅ Client builds successfully**:
+```bash
+cd /workspace/project/client
+go build ./...
+```
+
+**✅ Server builds successfully** (with RNNoise):
+```bash
+cd /workspace/project/server
+export WHISPER_DIR=/workspace/project/deps/whisper.cpp
+export RNNOISE_DIR=/workspace/project/deps/rnnoise
+export PKG_CONFIG_PATH="$RNNOISE_DIR/lib/pkgconfig:$PKG_CONFIG_PATH"
+export CGO_CFLAGS="-I$WHISPER_DIR/include -I$WHISPER_DIR/ggml/include -I$RNNOISE_DIR/include"
+export CGO_LDFLAGS="-L$WHISPER_DIR/build/src -L$WHISPER_DIR/build/ggml/src -L$RNNOISE_DIR/lib -lwhisper -lggml -lggml-base -lggml-cpu -lrnnoise -lstdc++ -lm"
+export CGO_CFLAGS_ALLOW="-mfma|-mf16c"
+go build -tags rnnoise -o server ./cmd/server
+```
+
+Both compile without errors!
+
+---
+
+#### **8. Future Migration Opportunity**
+
+**Optional Improvement**: The server transcription components (`whisper.go`, `pipeline.go`, `rnnoise_real.go`, `chunker.go`) still use manual `[Tag]` prefixes with `log.Printf()`.
+
+**Current** (legacy style):
+```go
+log.Printf("[Whisper] Processing audio chunk")
+```
+
+**Could be** (consistent with rest of system):
+```go
+whisperLog := log.With("Whisper")
+whisperLog.Info("Processing audio chunk")
+```
+
+This is **not urgent** - the current approach works fine. Just noting it for future cleanup if desired.
+
+---
+
+### Current System Status (Updated Session 11)
+
+**✅ WORKING**:
+- Real RNNoise noise suppression (with `-tags rnnoise` build)
+- 16kHz ↔ 48kHz resampling (3x linear interpolation)
+- VAD-based speech detection with speech duration gating
+- Smart chunking on 1 second silence
+- Streaming transcriptions from server to client
+- **CLIENT TERMINAL DISPLAY** (Session 10)
+- **UNIFIED STRUCTURED LOGGING** (Session 11) ⭐ NEW!
+- Hallucination prevention (requires 1s of actual speech)
+- Debug logging for RNNoise visibility
+- Auto-detecting build system for Mac
+- Component-tagged logging across all code
+- Structured fields support for better parsing
+- JSON output option for production
+
+**⏳ NOT YET IMPLEMENTED**:
+- Debug log file to disk (8MB rolling log - V1 requirement)
+- Session text accumulation in client
+- Post-processing modes (V2 feature)
+- Hammerspoon UI window (V1 plan)
+
+**📊 PERFORMANCE**:
+- End-to-end latency: ~1-3 seconds (speech → silence → transcription displayed)
+- Client display overhead: Negligible (simple printf)
+- Logging overhead: Minimal (structured fields add ~microseconds)
+- User experience: Clean, immediate feedback, professional logging
+
+**🎨 CODE QUALITY**:
+- Consistent logging format across client and server
+- Production-ready structured logging
+- Easy to switch to JSON output
+- No more scattered `fmt.Printf` calls
+- Clean separation: user output vs logging
+
+---
+
+### What's Next
+
+**Immediate priorities (Post Session 11)**:
+1. **Debug Log File** (V1 Requirement) - 8MB rolling log at `~/.streaming-transcription/debug.log`
+2. **Production Testing** - Coffee shop test with real noise!
+3. **Session Accumulation** (Optional) - Save complete transcription text in client
+4. **Hammerspoon Integration** (V1 Plan) - Hotkey control, text insertion
+
+**V1 is almost complete!** We have:
+- ✅ Real-time streaming
+- ✅ RNNoise noise suppression
+- ✅ VAD smart chunking
+- ✅ Whisper transcription
+- ✅ Client display
+- ✅ Professional logging system ⭐ NEW!
+- ⏳ Debug logging (next!)
+
+---
 
 ### 📅 **SESSION UPDATE: 2025-11-06 Session 10 - CLIENT TRANSCRIPTION DISPLAY!** 📺
 
