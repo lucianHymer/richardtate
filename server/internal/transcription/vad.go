@@ -62,14 +62,7 @@ func (v *VoiceActivityDetector) ProcessFrame(samples []int16) bool {
 	// Determine if speech or silence
 	isSpeech := energy > v.config.EnergyThreshold
 
-	// Log only on state transitions
-	wasJustSpeech := v.lastFrameWasSpeech
-	if isSpeech != wasJustSpeech {
-		log.Printf("[VAD] Energy: %.1f (threshold: %.1f) → Crossing to %s",
-			energy, v.config.EnergyThreshold, map[bool]string{true: "SPEECH", false: "SILENCE"}[isSpeech])
-	}
-
-	// Update counters
+	// Update counters (no logging)
 	frameDuration := time.Duration(v.config.FrameDurationMs) * time.Millisecond
 
 	if isSpeech {

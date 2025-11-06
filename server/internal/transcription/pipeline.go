@@ -79,8 +79,6 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		ChunkReadyCallback: pipeline.transcribeChunk,
 	})
 
-	log.Printf("[Pipeline] Ready: VAD chunking (threshold=%.0f, silence=%.1fs)",
-		config.VADEnergyThreshold, config.SilenceThreshold.Seconds())
 	return pipeline, nil
 }
 
@@ -118,7 +116,6 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 // transcribeChunk is called by the chunker when a chunk is ready for transcription
 func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 	duration := float64(len(samples)) / 16000.0
-	log.Printf("[Whisper] 🎤 Transcribing %.1fs...", duration)
 
 	// Save debug WAV if enabled
 	if p.debugWAV {
@@ -144,12 +141,12 @@ func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 	select {
 	case p.resultChan <- result:
 		if err != nil {
-			log.Printf("[Whisper] ❌ Error: %v", err)
+			log.Printf("[%.1fs] ERROR: %v", duration, err)
 		} else {
-			log.Printf("[Whisper] ✅ \"%s\"", text)
+			log.Printf("[%.1fs] %s", duration, text)
 		}
 	default:
-		log.Printf("[Whisper] ⚠️  Result channel full!")
+		log.Printf("[%.1fs] DROPPED (channel full)", duration)
 	}
 }
 
@@ -185,7 +182,6 @@ func (p *TranscriptionPipeline) Start() error {
 	p.chunker.Reset()
 	p.rnnoise.Reset()
 
-	log.Printf("[Pipeline] Started - streaming transcription with VAD-based chunking")
 	return nil
 }
 
@@ -199,22 +195,15 @@ func (p *TranscriptionPipeline) Stop() error {
 	p.active = false
 	p.mu.Unlock()
 
-	log.Printf("[Pipeline] Stopping - flushing remaining audio")
-
 	// Flush any remaining audio in chunker
 	p.chunker.Flush()
 
 	// Flush any remaining audio in RNNoise buffer
 	remainingSamples := p.rnnoise.Flush()
 	if len(remainingSamples) > 0 {
-		log.Printf("[Pipeline] Flushed %d samples from RNNoise buffer", len(remainingSamples))
 		p.chunker.ProcessSamples(remainingSamples)
 		p.chunker.Flush() // Flush again after adding RNNoise remainder
 	}
-
-	// Get final stats
-	stats := p.chunker.GetStats()
-	log.Printf("[Pipeline] Session stats: total_speech=%.1fs", stats.TotalSpeech.Seconds())
 
 	return nil
 }
@@ -241,7 +230,6 @@ func (p *TranscriptionPipeline) Close() error {
 
 	close(p.resultChan)
 
-	log.Printf("[Pipeline] Closed")
 	return nil
 }
 

@@ -82,24 +82,11 @@ func (c *SmartChunker) ProcessSamples(samples []int16) {
 	frameSize := c.config.SampleRate / 100 // 10ms = 160 samples at 16kHz
 	offset := 0
 
-	previouslySpeaking := c.vad.IsSpeaking()
-
 	for offset+frameSize <= len(samples) {
 		frame := samples[offset : offset+frameSize]
 
 		// Run VAD on frame
-		isSpeech := c.vad.ProcessFrame(frame)
-
-		// Log when speech state changes
-		if isSpeech != previouslySpeaking {
-			stats := c.vad.Stats()
-			if isSpeech {
-				log.Printf("[SmartChunker] 🗣️  SPEECH STARTED (was silent for %.2fs)", stats.SilenceDuration.Seconds())
-			} else {
-				log.Printf("[SmartChunker] 🤐 SILENCE STARTED (was speaking for %.2fs)", stats.SpeechDuration.Seconds())
-			}
-			previouslySpeaking = isSpeech
-		}
+		c.vad.ProcessFrame(frame)
 
 		offset += frameSize
 	}
@@ -117,15 +104,12 @@ func (c *SmartChunker) checkAndChunk() {
 
 	// Safety: Always chunk if we hit max duration
 	if bufferDuration >= c.config.MaxChunkDuration {
-		log.Printf("[SmartChunker] ⚠️  MAX DURATION REACHED (%.1fs) - FORCING CHUNK", bufferDuration.Seconds())
 		c.flushChunk()
 		return
 	}
 
 	// Check if VAD detected sufficient silence AND we have enough audio
 	if shouldChunk && bufferDuration >= c.config.MinChunkDuration {
-		log.Printf("[SmartChunker] ✂️  CHUNK READY! Silence=%.2fs → Sending %.2fs to Whisper",
-			silenceDuration.Seconds(), bufferDuration.Seconds())
 		c.flushChunk()
 		return
 	}

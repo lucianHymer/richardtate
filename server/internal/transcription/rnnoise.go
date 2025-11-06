@@ -19,9 +19,7 @@ type RNNoiseProcessor struct {
 
 // NewRNNoiseProcessor creates a new RNNoise processor
 func NewRNNoiseProcessor(modelPath string) (*RNNoiseProcessor, error) {
-	log.Printf("[RNNoise] DISABLED - Using pass-through (no noise suppression)")
-	log.Printf("[RNNoise] To enable: Install rnnoise library and rebuild with CGO")
-
+	// Pass-through implementation (no actual denoising)
 	return &RNNoiseProcessor{
 		buffer: make([]int16, 0, TargetFrameSamples),
 	}, nil
