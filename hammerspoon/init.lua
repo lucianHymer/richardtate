@@ -96,11 +96,15 @@ local function connectWebSocket()
         if event == "message" then
             local success, data = pcall(hs.json.decode, message)
             if success and data.chunk then
+                print("📝 Received chunk: " .. data.chunk)
                 -- Insert text directly at cursor position!
                 hs.eventtap.keyStrokes(data.chunk)
+                print("✓ Typed chunk")
             elseif success and data.final then
                 -- Recording complete (optional: could show notification)
-                print("Transcription complete: " .. (data.full_text or ""))
+                print("Transcription complete")
+            else
+                print("⚠️ Failed to decode or no chunk: " .. tostring(message))
             end
         elseif event == "open" then
             print("WebSocket connected")
