@@ -8,7 +8,7 @@ Simple hotkey-triggered voice transcription with direct text insertion.
 - **Live transcription**: Text appears directly at your cursor as you speak
 - **Visual indicator**: Small floating window shows recording status
 - **Works everywhere**: Any text field in any app (Obsidian, VSCode, Slack, browser, etc.)
-- **Automatic saving**: All transcriptions saved to debug log (`~/.streaming-transcription/debug.log`)
+- **Automatic saving**: All transcriptions saved to debug log (`~/.config/richardtate/debug.log`)
 - **Calibration UI**: Press `Ctrl+Alt+C` to open visual VAD calibration wizard
 
 ## Prerequisites
@@ -189,20 +189,20 @@ wsURL = "ws://localhost:9000/transcriptions",
 All transcriptions are automatically saved to:
 
 ```
-~/.streaming-transcription/debug.log
+~/.config/richardtate/debug.log
 ```
 
 View recent transcriptions:
 
 ```bash
 # View last 10 chunks
-jq 'select(.type=="chunk")' ~/.streaming-transcription/debug.log | tail -10
+jq 'select(.type=="chunk")' ~/.config/richardtate/debug.log | tail -10
 
 # Get last complete session
-jq -r 'select(.type=="complete") | .full_text' ~/.streaming-transcription/debug.log | tail -1
+jq -r 'select(.type=="complete") | .full_text' ~/.config/richardtate/debug.log | tail -1
 
 # Search for keyword
-jq -r 'select(.text | contains("important"))' ~/.streaming-transcription/debug.log
+jq -r 'select(.text | contains("important"))' ~/.config/richardtate/debug.log
 ```
 
 ## How It Works
@@ -232,7 +232,7 @@ Future enhancements:
 ## Support
 
 For issues or questions:
-- Check debug log: `~/.streaming-transcription/debug.log`
+- Check debug log: `~/.config/richardtate/debug.log`
 - Check Hammerspoon console: Hammerspoon menu → **Console**
 - Review client logs for errors
 

@@ -31,10 +31,10 @@ Persistent debug logging system for transcription storage with automatic 8MB rol
 
 ## Configuration
 
-**Client config** (config.yaml):
+**Client config** (client.yaml):
 ```yaml
 client:
-  debug_log_path: "~/.voice-notes/debug.log"  # Empty = disabled
+  debug_log_path: "~/.config/richardtate/debug.log"  # Empty = disabled
 ```
 
 **Constants** (hardcoded in debuglog.go):
@@ -111,25 +111,25 @@ debugLog.LogInserted("Obsidian", len(text))
 ### Recent Chunks
 ```bash
 # Last 20 chunks
-jq 'select(.type=="chunk")' ~/.voice-notes/debug.log | tail -20
+jq 'select(.type=="chunk")' ~/.config/richardtate/debug.log | tail -20
 
 # Last complete session
-jq -r 'select(.type=="complete") | .full_text' ~/.voice-notes/debug.log | tail -1
+jq -r 'select(.type=="complete") | .full_text' ~/.config/richardtate/debug.log | tail -1
 ```
 
 ### Search for Keywords
 ```bash
 # Find chunks containing keyword
-jq -r 'select(.text | contains("keyword"))' ~/.voice-notes/debug.log
+jq -r 'select(.text | contains("keyword"))' ~/.config/richardtate/debug.log
 ```
 
 ### Session Statistics
 ```bash
 # Count sessions today
-jq 'select(.type=="complete")' ~/.voice-notes/debug.log | grep "$(date +%Y-%m-%d)" | wc -l
+jq 'select(.type=="complete")' ~/.config/richardtate/debug.log | grep "$(date +%Y-%m-%d)" | wc -l
 
 # Average session duration
-jq -r 'select(.type=="complete") | .duration_seconds' ~/.voice-notes/debug.log | awk '{sum+=$1; count++} END {print sum/count}'
+jq -r 'select(.type=="complete") | .duration_seconds' ~/.config/richardtate/debug.log | awk '{sum+=$1; count++} END {print sum/count}'
 ```
 
 ## Performance Characteristics
@@ -165,7 +165,7 @@ When `debug.log` reaches 8MB:
 ### Manual Archiving
 Users can manually archive `.log.1` files if desired:
 ```bash
-cp ~/.voice-notes/debug.log.1 ~/archives/debug-$(date +%Y%m%d).log
+cp ~/.config/richardtate/debug.log.1 ~/archives/debug-$(date +%Y%m%d).log
 ```
 
 ## Implementation Details

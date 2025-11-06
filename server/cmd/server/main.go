@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/pion/webrtc/v4"
@@ -15,8 +16,18 @@ import (
 	webrtcmgr "github.com/lucianHymer/streaming-transcription/server/internal/webrtc"
 )
 
+// getDefaultConfigPath returns the XDG Base Directory compliant config path
+func getDefaultConfigPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "server.yaml" // Fallback to current directory
+	}
+	return filepath.Join(homeDir, ".config", "richardtate", "server.yaml")
+}
+
 func main() {
-	configPath := flag.String("config", "config.yaml", "Path to configuration file")
+	defaultConfigPath := getDefaultConfigPath()
+	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
 	flag.Parse()
 
 	// Load configuration

@@ -149,7 +149,7 @@ fi
 # Create config directory
 echo ""
 echo "Setting up configuration..."
-CONFIG_DIR="$HOME/.config/voice-notes"
+CONFIG_DIR="$HOME/.config/richardtate"
 if [ ! -d "$CONFIG_DIR" ]; then
     mkdir -p "$CONFIG_DIR"
     success "Created config directory: $CONFIG_DIR"
@@ -157,14 +157,24 @@ else
     success "Config directory exists: $CONFIG_DIR"
 fi
 
-# Copy example config if needed
-if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
-    info "Creating default config from example..."
-    cp "$PROJECT_ROOT/client/config.example.yaml" "$CONFIG_DIR/config.yaml"
-    success "Config created at $CONFIG_DIR/config.yaml"
+# Copy client config if needed
+if [ ! -f "$CONFIG_DIR/client.yaml" ]; then
+    info "Creating client config from example..."
+    cp "$PROJECT_ROOT/client/config.example.yaml" "$CONFIG_DIR/client.yaml"
+    success "Client config created at $CONFIG_DIR/client.yaml"
 else
-    warn "Config already exists at $CONFIG_DIR/config.yaml"
+    warn "Client config already exists at $CONFIG_DIR/client.yaml"
     echo "  Review client/config.example.yaml for new options"
+fi
+
+# Copy server config if needed
+if [ ! -f "$CONFIG_DIR/server.yaml" ]; then
+    info "Creating server config from example..."
+    cp "$PROJECT_ROOT/server/config.example.yaml" "$CONFIG_DIR/server.yaml"
+    success "Server config created at $CONFIG_DIR/server.yaml"
+else
+    warn "Server config already exists at $CONFIG_DIR/server.yaml"
+    echo "  Review server/config.example.yaml for new options"
 fi
 
 # Build client and server

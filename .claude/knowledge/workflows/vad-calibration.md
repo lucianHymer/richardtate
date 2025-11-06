@@ -118,7 +118,7 @@ Please add this line to your config file:
 vad:
   energy_threshold: 184.2
 
-Config file location: /home/user/.voice-notes/config.yaml
+Config file location: /home/user/.config/richardtate/client.yaml
 
 ✓ Calibration complete!
 ```

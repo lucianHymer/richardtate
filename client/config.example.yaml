@@ -7,8 +7,8 @@ client:
   debug: true
 
   # Debug log file path (supports ~ for home directory)
-  # Default: ~/.config/voice-notes/debug.log
-  debug_log_path: "~/.config/voice-notes/debug.log"
+  # Default: ~/.config/richardtate/debug.log
+  debug_log_path: "~/.config/richardtate/debug.log"
 
   # Debug log max size in bytes (8MB)
   debug_log_max_size: 8388608

@@ -27,9 +27,9 @@ import (
 func getDefaultConfigPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "config.yaml" // Fallback to current directory
+		return "client.yaml" // Fallback to current directory
 	}
-	return filepath.Join(homeDir, ".config", "voice-notes", "config.yaml")
+	return filepath.Join(homeDir, ".config", "richardtate", "client.yaml")
 }
 
 func main() {

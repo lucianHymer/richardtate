@@ -161,7 +161,7 @@ This installs everything:
 - Whisper.cpp with Metal acceleration
 - Whisper large-v3-turbo model (~1.6GB)
 - RNNoise library and model
-- Creates `~/.config/voice-notes/` directory
+- Creates `~/.config/richardtate/` directory
 - Builds client and server binaries
 
 ### Manual Installation
@@ -200,7 +200,8 @@ If you prefer manual setup, see the detailed steps in [docs/SETUP.md](docs/SETUP
 
 ### Configuration
 
-- Config file: `~/.config/voice-notes/config.yaml`
-- Debug logs: `~/.config/voice-notes/debug.log`
-- Example config: `client/config.example.yaml`
+- Client config: `~/.config/richardtate/client.yaml`
+- Server config: `~/.config/richardtate/server.yaml`
+- Debug logs: `~/.config/richardtate/debug.log`
+- Example configs: `client/config.example.yaml` and `server/config.example.yaml`
 

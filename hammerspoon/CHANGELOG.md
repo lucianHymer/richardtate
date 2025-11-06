@@ -8,7 +8,7 @@
 - **Minimal visual indicator**: Small floating window shows "🔴 Recording..." in top-right corner
 - **WebSocket integration**: Receives transcription chunks from client daemon in real-time
 - **HTTP API integration**: Controls client daemon via `/start` and `/stop` endpoints
-- **Automatic debug logging**: All transcriptions saved to `~/.streaming-transcription/debug.log`
+- **Automatic debug logging**: All transcriptions saved to `~/.config/richardtate/debug.log`
 - **Installation script**: `install.sh` for easy setup with backup handling
 - **Comprehensive documentation**: README with setup, usage, and troubleshooting
 

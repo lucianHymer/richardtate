@@ -53,7 +53,7 @@ Saves recommended threshold to config file.
 ```json
 {
   "success": true,
-  "config_path": "/home/user/.voice-notes/config.yaml"
+  "config_path": "/home/user/.config/richardtate/client.yaml"
 }
 ```
 
