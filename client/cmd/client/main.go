@@ -76,7 +76,7 @@ func main() {
 	}
 
 	// Create audio capturer
-	capturer, err := audio.New(20) // Buffer up to 20 chunks (4 seconds at 200ms/chunk)
+	capturer, err := audio.New(20, cfg.Audio.DeviceName) // Buffer up to 20 chunks (4 seconds at 200ms/chunk)
 	if err != nil {
 		log.Fatal("Failed to create audio capturer: %v", err)
 	}

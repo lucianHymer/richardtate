@@ -28,10 +28,11 @@ type AudioChunk struct {
 
 // Capturer handles microphone audio capture using malgo
 type Capturer struct {
-	ctx       *malgo.AllocatedContext
-	device    *malgo.Device
-	isRunning bool
-	mu        sync.Mutex
+	ctx        *malgo.AllocatedContext
+	device     *malgo.Device
+	deviceName string // Optional: specify device by name
+	isRunning  bool
+	mu         sync.Mutex
 
 	// Output channel for audio chunks
 	chunks chan AudioChunk
@@ -44,7 +45,8 @@ type Capturer struct {
 
 // New creates a new audio capturer
 // chunkBufferSize determines how many chunks can be queued (recommend 10-20)
-func New(chunkBufferSize int) (*Capturer, error) {
+// deviceName specifies which device to use (empty = default)
+func New(chunkBufferSize int, deviceName string) (*Capturer, error) {
 	// Calculate buffer size: 16kHz * 1 channel * 2 bytes/sample * 0.2 seconds
 	bytesPerChunk := SampleRate * Channels * (BitsPerSample / 8) * ChunkSizeMS / 1000
 
@@ -53,6 +55,7 @@ func New(chunkBufferSize int) (*Capturer, error) {
 		buffer:     make([]byte, 0, bytesPerChunk),
 		bufferSize: bytesPerChunk,
 		sequenceID: 0,
+		deviceName: deviceName,
 	}
 
 	// Initialize malgo context
@@ -74,14 +77,26 @@ func (c *Capturer) Start() error {
 		return fmt.Errorf("capturer already running")
 	}
 
-	// List available devices for debugging
+	// List available devices and find the requested one
 	fmt.Println("\n=== Available Audio Devices ===")
 	infos, err := c.ctx.Devices(malgo.Capture)
+	var selectedDeviceID malgo.DeviceID
+	foundDevice := false
+
 	if err == nil {
 		for i, info := range infos {
-			fmt.Printf("[%d] %s\n", i, info.Name())
-			if info.IsDefault != 0 {
-				fmt.Printf("    ^ DEFAULT DEVICE\n")
+			isDefault := info.IsDefault != 0
+			fmt.Printf("[%d] %s", i, info.Name())
+			if isDefault {
+				fmt.Printf(" [DEFAULT]")
+			}
+			fmt.Println()
+
+			// Check if this is the device we want
+			if c.deviceName != "" && info.Name() == c.deviceName {
+				selectedDeviceID = info.ID
+				foundDevice = true
+				fmt.Printf("    ✅ SELECTED (matches config: %s)\n", c.deviceName)
 			}
 		}
 	}
@@ -89,13 +104,24 @@ func (c *Capturer) Start() error {
 
 	// Configure capture device
 	deviceConfig := malgo.DefaultDeviceConfig(malgo.Capture)
+
+	// Use specific device if found
+	if foundDevice {
+		deviceConfig.Capture.DeviceID = selectedDeviceID.Pointer()
+		fmt.Printf("Using specified device: %s\n", c.deviceName)
+	} else if c.deviceName != "" {
+		fmt.Printf("⚠️  Warning: Device '%s' not found, using default\n", c.deviceName)
+	} else {
+		fmt.Println("Using default audio device")
+	}
+
 	deviceConfig.Capture.Format = Format
 	deviceConfig.Capture.Channels = Channels
 	deviceConfig.SampleRate = SampleRate
 	deviceConfig.Alsa.NoMMap = 1 // Recommended for better compatibility
 
 	// Print the configuration we're using
-	fmt.Printf("Capture config: Format=%v, Channels=%d, SampleRate=%d\n",
+	fmt.Printf("Capture config: Format=%v, Channels=%d, SampleRate=%d\n\n",
 		deviceConfig.Capture.Format, deviceConfig.Capture.Channels, deviceConfig.SampleRate)
 
 	// Data callback - called by malgo when audio data is available
