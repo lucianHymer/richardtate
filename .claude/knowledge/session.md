@@ -97,3 +97,16 @@ This prevents hallucinations on trailing silence while still allowing legitimate
 **Files**: server/internal/transcription/chunker.go
 ---
 
+### [14:47] [workflow] Client transcription display in terminal
+**Details**: Client now displays transcriptions in terminal as they arrive from server. Implementation in handleDataChannelMessage() function:
+
+- MessageTypeTranscriptFinal: Shows "✅ {text}" for completed transcriptions
+- MessageTypeTranscriptPartial: Shows "📝 [partial] {text}" for partial results (future use)
+- Unmarshals protocol.TranscriptData from message JSON
+- Errors go to stderr, transcriptions to stdout
+- Simple fmt.Printf() - no UI/webview complexity yet
+
+This gives immediate visual feedback to users while keeping implementation simple. Future could add: accumulation of full session text, timestamps, formatting, etc.
+**Files**: client/cmd/client/main.go
+---
+
