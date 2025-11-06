@@ -51,6 +51,25 @@ func NewWhisperTranscriber(config WhisperConfig) (*WhisperTranscriber, error) {
 	// Disable translation (we want transcription only)
 	ctx.SetTranslate(false)
 
+	// Enable speed-up tricks for faster processing
+	ctx.SetSpeedUp(true)
+
+	// Set beam size for better accuracy (default is 5, we'll use 5)
+	// Higher = more accurate but slower
+	ctx.SetBeamSize(5)
+
+	// Set max segment length in characters (0 = no limit)
+	ctx.SetMaxSegmentLength(0)
+
+	// Set token timestamps for more accurate segment timing
+	ctx.SetTokenTimestamps(true)
+
+	// Set max text context (help with longer audio)
+	ctx.SetMaxTextContext(16384)
+
+	log.Printf("[Whisper] Context configured: language=%s, threads=%d, speedup=true",
+		config.Language, config.Threads)
+
 	return &WhisperTranscriber{
 		model:   model,
 		ctx:     ctx,
@@ -87,32 +106,50 @@ func (w *WhisperTranscriber) Transcribe(audioSamples []float32) (string, error) 
 	log.Printf("[Whisper] Audio stats: samples=%d, duration=%.2fs, min=%.4f, max=%.4f, avg=%.4f",
 		len(audioSamples), float64(len(audioSamples))/16000.0, min, max, avg)
 
+	// Reset context before processing (important for consistent results)
+	if err := w.ctx.ResetTimings(); err != nil {
+		log.Printf("[Whisper] Warning: Failed to reset timings: %v", err)
+	}
+
 	// Process audio through Whisper
 	// We don't need callbacks for the simple case, use nil
+	log.Printf("[Whisper] Starting Whisper processing...")
 	err := w.ctx.Process(audioSamples, nil, nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to process audio: %w", err)
 	}
+	log.Printf("[Whisper] Whisper processing complete, collecting segments...")
 
-	// Collect all segments into a single text
+	// Try to get segment count
+	// Note: The whisper.cpp Go bindings may iterate differently
 	var fullText string
 	segmentCount := 0
-	for {
-		segment, err := w.ctx.NextSegment()
-		if err != nil {
-			break // EOF means we've processed all segments
-		}
-		segmentCount++
 
-		// Append segment text with space
+	// Try collecting segments via callback during processing instead
+	// Create a new processing with segment callback
+	w.mu.Unlock() // Unlock temporarily for callback-based processing
+
+	segments := []string{}
+	err = w.ctx.Process(audioSamples, nil, func(segment whisper.Segment) {
+		segmentCount++
 		text := segment.Text
 		log.Printf("[Whisper] Segment %d: %q (start=%.2fs, end=%.2fs)",
 			segmentCount, text, float64(segment.Start)/100.0, float64(segment.End)/100.0)
+		segments = append(segments, text)
+	}, nil)
 
-		if len(fullText) > 0 && len(text) > 0 {
+	w.mu.Lock() // Re-lock
+
+	if err != nil {
+		return "", fmt.Errorf("failed to process with callback: %w", err)
+	}
+
+	// Join all segments
+	for i, seg := range segments {
+		if i > 0 && len(seg) > 0 {
 			fullText += " "
 		}
-		fullText += text
+		fullText += seg
 	}
 
 	log.Printf("[Whisper] Transcription complete: %d segments, text length=%d", segmentCount, len(fullText))

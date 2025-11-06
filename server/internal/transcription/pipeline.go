@@ -1,8 +1,10 @@
 package transcription
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 )
@@ -177,6 +179,14 @@ func (p *TranscriptionPipeline) Stop() error {
 func (p *TranscriptionPipeline) transcribeSession(audioData []byte) {
 	log.Printf("[Pipeline] Transcribing %d bytes of PCM audio", len(audioData))
 
+	// Save audio to WAV file for debugging
+	wavPath := "/tmp/last-recording.wav"
+	if err := saveWAV(wavPath, audioData, 16000, 1, 16); err != nil {
+		log.Printf("[Pipeline] Warning: Failed to save WAV file: %v", err)
+	} else {
+		log.Printf("[Pipeline] Saved audio to %s for debugging", wavPath)
+	}
+
 	// Convert PCM to float32 for Whisper
 	samples := ConvertPCMToFloat32(audioData)
 
@@ -224,6 +234,41 @@ func (p *TranscriptionPipeline) Close() error {
 	close(p.resultChan)
 
 	log.Printf("[Pipeline] Closed")
+	return nil
+}
+
+// saveWAV writes PCM audio data to a WAV file
+func saveWAV(filename string, pcmData []byte, sampleRate, channels, bitsPerSample int) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	dataSize := uint32(len(pcmData))
+	fileSize := 36 + dataSize
+
+	// Write WAV header
+	// "RIFF" chunk
+	file.WriteString("RIFF")
+	binary.Write(file, binary.LittleEndian, fileSize)
+	file.WriteString("WAVE")
+
+	// "fmt " subchunk
+	file.WriteString("fmt ")
+	binary.Write(file, binary.LittleEndian, uint32(16))                         // Subchunk size
+	binary.Write(file, binary.LittleEndian, uint16(1))                          // Audio format (1 = PCM)
+	binary.Write(file, binary.LittleEndian, uint16(channels))                   // Number of channels
+	binary.Write(file, binary.LittleEndian, uint32(sampleRate))                 // Sample rate
+	binary.Write(file, binary.LittleEndian, uint32(sampleRate*channels*bitsPerSample/8)) // Byte rate
+	binary.Write(file, binary.LittleEndian, uint16(channels*bitsPerSample/8))   // Block align
+	binary.Write(file, binary.LittleEndian, uint16(bitsPerSample))              // Bits per sample
+
+	// "data" subchunk
+	file.WriteString("data")
+	binary.Write(file, binary.LittleEndian, dataSize)
+	file.Write(pcmData)
+
 	return nil
 }
 
