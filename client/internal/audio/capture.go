@@ -74,12 +74,33 @@ func (c *Capturer) Start() error {
 		return fmt.Errorf("capturer already running")
 	}
 
+	// List available devices for debugging
+	fmt.Println("\n=== Available Audio Devices ===")
+	infos, err := c.ctx.Devices(malgo.Capture)
+	if err == nil {
+		for i, info := range infos {
+			fmt.Printf("[%d] %s\n", i, info.Name())
+			if info.IsDefault != 0 {
+				fmt.Printf("    ^ DEFAULT DEVICE\n")
+			}
+		}
+	}
+	fmt.Println("================================\n")
+
 	// Configure capture device
 	deviceConfig := malgo.DefaultDeviceConfig(malgo.Capture)
 	deviceConfig.Capture.Format = Format
 	deviceConfig.Capture.Channels = Channels
 	deviceConfig.SampleRate = SampleRate
 	deviceConfig.Alsa.NoMMap = 1 // Recommended for better compatibility
+
+	// Get the actual default device info
+	defaultInfo, err := c.ctx.DeviceInfo(malgo.Capture, deviceConfig.Capture.DeviceID, malgo.Shared)
+	if err == nil {
+		fmt.Printf("Using device: %s\n", defaultInfo.Name())
+		fmt.Printf("Format: %v, Channels: %d, SampleRate: %d\n",
+			deviceConfig.Capture.Format, deviceConfig.Capture.Channels, deviceConfig.SampleRate)
+	}
 
 	// Data callback - called by malgo when audio data is available
 	onRecvFrames := func(pSample2, pSample []byte, framecount uint32) {
