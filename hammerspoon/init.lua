@@ -11,7 +11,6 @@ local eventtap = require("hs.eventtap")
 local json = require("hs.json")
 local timer = require("hs.timer")
 local notify = require("hs.notify")
-local hs = require("hs")
 
 -- Configuration
 local config = {
