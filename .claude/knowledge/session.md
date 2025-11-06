@@ -276,3 +276,44 @@ Keeps client lightweight by delegating all energy calculation to server. Client 
 **Files**: server/internal/api/server.go, client/internal/calibrate/calibrate.go, client/cmd/client/main.go
 ---
 
+### [16:04] [gotcha] VAD Calibration Missing RNNoise Processing
+**Details**: **CRITICAL ISSUE**: VAD calibration currently analyzes raw audio, but production VAD sees RNNoise-processed audio.
+
+**Production Flow**:
+```
+Raw Audio → RNNoise → VAD → Chunker → Whisper
+```
+
+**Calibration Flow** (current):
+```
+Raw Audio → VAD energy calculation (no RNNoise!)
+```
+
+**Impact**:
+- Calibration sees noisier audio than production
+- Recommended thresholds may be too high
+- RNNoise typically reduces background noise by 30-50%
+- Background energy readings in calibration are artificially inflated
+
+**Example**:
+- Raw background noise: 150 (what calibration sees)
+- After RNNoise: 75 (what production VAD sees)
+- If calibration recommends threshold of 200, production might not detect speech!
+
+**Solution**:
+Add RNNoise processing to `/api/v1/analyze-audio` endpoint:
+1. Check if server was built with `-tags rnnoise`
+2. If yes: run audio through RNNoise before calculating energy
+3. If no: use raw audio (current behavior)
+4. This makes calibration match production exactly
+
+**Files to modify**:
+- `server/internal/api/server.go:handleAnalyzeAudio()` - Add RNNoise processing
+- Need access to RNNoise instance (currently in pipeline)
+- May need to create a standalone RNNoise processor for calibration
+
+**Workaround** (until fixed):
+Users can manually adjust recommended threshold down by ~30% if using RNNoise in production.
+**Files**: server/internal/api/server.go, server/internal/transcription/rnnoise_real.go
+---
+

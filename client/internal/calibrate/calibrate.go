@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
+	"gopkg.in/yaml.v3"
 )
 
 // AudioStatistics holds energy statistics from server
@@ -51,7 +53,7 @@ func NewWizard(cfg *config.Config, log *logger.Logger) (*Wizard, error) {
 }
 
 // Run executes the calibration wizard
-func (w *Wizard) Run(configPath string, autoSave bool) error {
+func (w *Wizard) Run(clientConfigPath string, autoSave bool) error {
 	fmt.Println()
 	fmt.Println("🎤 VAD Calibration Wizard")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━")
@@ -119,23 +121,35 @@ func (w *Wizard) Run(configPath string, autoSave bool) error {
 	fmt.Printf("     (halfway between background max and speech min)\n\n")
 
 	// Save to config
+	var serverConfigPath string
 	if autoSave {
-		fmt.Println("  💾 Auto-saving to config...")
-		if err := w.updateConfig(configPath, recommendedThreshold); err != nil {
+		fmt.Print("  💾 Enter server config path [config.yaml]: ")
+		fmt.Scanln(&serverConfigPath)
+		if serverConfigPath == "" {
+			serverConfigPath = "config.yaml"
+		}
+
+		if err := w.updateServerConfig(serverConfigPath, recommendedThreshold); err != nil {
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 		fmt.Println("  ✓ Config updated successfully!")
 	} else {
-		fmt.Print("  💾 Save to config? [Y/n] ")
+		fmt.Print("  💾 Save to server config? [Y/n] ")
 		var response string
 		fmt.Scanln(&response)
 		if response == "" || response == "Y" || response == "y" {
-			if err := w.updateConfig(configPath, recommendedThreshold); err != nil {
+			fmt.Print("  📄 Enter server config path [config.yaml]: ")
+			fmt.Scanln(&serverConfigPath)
+			if serverConfigPath == "" {
+				serverConfigPath = "config.yaml"
+			}
+
+			if err := w.updateServerConfig(serverConfigPath, recommendedThreshold); err != nil {
 				return fmt.Errorf("failed to save config: %w", err)
 			}
 			fmt.Println("  ✓ Config updated successfully!")
 		} else {
-			fmt.Printf("  ℹ️  Not saved. You can manually set energy_threshold: %.0f in your config.\n", recommendedThreshold)
+			fmt.Printf("  ℹ️  Not saved. You can manually set energy_threshold: %.0f in server config.yaml\n", recommendedThreshold)
 		}
 	}
 
@@ -152,16 +166,24 @@ func (w *Wizard) recordAudio(duration time.Duration) ([]byte, error) {
 
 	var allAudio []byte
 	endTime := time.Now().Add(duration)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	fmt.Print("  ")
 
 	// Collect audio until duration expires
 	for time.Now().Before(endTime) {
 		select {
 		case chunk := <-w.capturer.Chunks():
 			allAudio = append(allAudio, chunk.Data...)
+		case <-ticker.C:
+			fmt.Print(".")
 		case <-time.After(100 * time.Millisecond):
 			// Continue waiting
 		}
 	}
+
+	fmt.Println() // Newline after dots
 
 	// Drain remaining chunks
 	for {
@@ -206,13 +228,41 @@ func (w *Wizard) analyzeAudio(audioData []byte) (*AudioStatistics, error) {
 	return &stats, nil
 }
 
-// updateConfig updates the server config file with new threshold
-func (w *Wizard) updateConfig(configPath string, threshold float64) error {
-	// For now, just print instructions
-	// TODO: Implement actual YAML parsing and updating
-	fmt.Printf("\n  ℹ️  Please manually update your server config.yaml:\n")
-	fmt.Printf("     vad:\n")
-	fmt.Printf("       energy_threshold: %.0f\n", threshold)
+// updateServerConfig updates the server config file with new threshold
+func (w *Wizard) updateServerConfig(configPath string, threshold float64) error {
+	// Read existing config
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Parse YAML
+	var config map[string]interface{}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Navigate to vad.energy_threshold
+	vad, ok := config["vad"].(map[string]interface{})
+	if !ok {
+		// Create vad section if it doesn't exist
+		vad = make(map[string]interface{})
+		config["vad"] = vad
+	}
+
+	// Update threshold
+	vad["energy_threshold"] = threshold
+
+	// Write back to file
+	output, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
 	return nil
 }
 
