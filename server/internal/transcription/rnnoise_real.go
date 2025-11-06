@@ -37,6 +37,8 @@ func NewRNNoiseProcessor(modelPath string) (*RNNoiseProcessor, error) {
 		return nil, fmt.Errorf("failed to create RNNoise denoiser: %w", err)
 	}
 
+	fmt.Printf("[RNNoise] Initialized - noise suppression active (16kHz ↔ 48kHz resampling)\n")
+
 	return &RNNoiseProcessor{
 		denoiser:     denoiser,
 		buffer16kHz:  make([]int16, 0, 160),  // 10ms at 16kHz
@@ -52,10 +54,13 @@ func (r *RNNoiseProcessor) ProcessChunk(samples []int16) ([]int16, error) {
 		return nil, nil
 	}
 
+	inputSamples := len(samples)
+
 	// Add to buffer
 	r.buffer16kHz = append(r.buffer16kHz, samples...)
 
 	var output []int16
+	framesProcessed := 0
 
 	// Process complete frames
 	for len(r.buffer16kHz) >= r.frameSize16k {
@@ -87,6 +92,12 @@ func (r *RNNoiseProcessor) ProcessChunk(samples []int16) ([]int16, error) {
 
 		// Append to output
 		output = append(output, denoised16k...)
+		framesProcessed++
+	}
+
+	if framesProcessed > 0 {
+		fmt.Printf("[RNNoise] Processed %d samples → %d frames (16kHz → 48kHz → 16kHz) → %d samples\n",
+			inputSamples, framesProcessed, len(output))
 	}
 
 	return output, nil
