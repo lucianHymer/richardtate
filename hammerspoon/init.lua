@@ -21,7 +21,7 @@ local state = {
 -- HTTP helper
 local function httpRequest(method, path, callback)
     local url = config.daemonURL .. path
-    hs.http.asyncRequest(url, method, nil, nil, function(status, body, headers)
+    hs.http.doAsyncRequest(url, method, nil, nil, function(status, body, headers)
         if callback then
             callback(status, body)
         end
