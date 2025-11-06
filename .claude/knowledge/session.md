@@ -54,3 +54,8 @@
 **Files**: client/internal/config/config.go, client/internal/api/server.go
 ---
 
+### [22:19] [gotcha] Default debug log path was read-only filesystem issue
+**Details**: The client config default for debug_log_path was set to "./debug.log" (current directory) on lines 60 and 116 of config.go. When client ran in a read-only filesystem, it would FATAL on startup. Fixed to use "~/.config/richardtate/debug.log" to match config.example.yaml default. The debuglog package already handles ~ expansion correctly.
+**Files**: client/internal/config/config.go
+---
+

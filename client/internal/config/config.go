@@ -57,7 +57,7 @@ func Load(path string) (*Config, error) {
 		cfg.Client.APIBindAddress = "localhost:8081"
 	}
 	if cfg.Client.DebugLogPath == "" {
-		cfg.Client.DebugLogPath = "./debug.log"
+		cfg.Client.DebugLogPath = "~/.config/richardtate/debug.log"
 	}
 	if cfg.Client.DebugLogMaxSize == 0 {
 		cfg.Client.DebugLogMaxSize = 8388608 // 8MB
@@ -113,7 +113,7 @@ func Default() *Config {
 	cfg := &Config{}
 	cfg.Client.APIBindAddress = "localhost:8081"
 	cfg.Client.Debug = true
-	cfg.Client.DebugLogPath = "./debug.log"
+	cfg.Client.DebugLogPath = "~/.config/richardtate/debug.log"
 	cfg.Client.DebugLogMaxSize = 8388608
 	cfg.Server.URL = "ws://localhost:8080"
 	cfg.Transcription.VAD.EnergyThreshold = 500.0
