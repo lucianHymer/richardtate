@@ -149,3 +149,58 @@ Total latency: **1-3 seconds** from speech to text (on Apple Silicon with Metal 
 - LLM-powered cleanup
 - Markdown support
 
+## Installation (macOS)
+
+### Quick Start (One Command)
+
+```bash
+./scripts/install-mac.sh
+```
+
+This installs everything:
+- Whisper.cpp with Metal acceleration
+- Whisper large-v3-turbo model (~1.6GB)
+- RNNoise library and model
+- Creates `~/.config/voice-notes/` directory
+- Builds client and server binaries
+
+### Manual Installation
+
+If you prefer manual setup, see the detailed steps in [docs/SETUP.md](docs/SETUP.md).
+
+### Post-Installation
+
+1. **Start the server:**
+   ```bash
+   cd server
+   ./server
+   ```
+
+2. **Calibrate VAD threshold** (in another terminal):
+   ```bash
+   cd client
+   ./client --calibrate
+   ```
+
+   Follow the wizard to measure your microphone's background noise and speech levels.
+
+3. **Start the client:**
+   ```bash
+   ./client
+   ```
+
+4. **(Optional) Install Hammerspoon integration:**
+   ```bash
+   brew install --cask hammerspoon
+   cd hammerspoon
+   ./install.sh
+   ```
+
+   Grant accessibility permissions, then reload Hammerspoon. Press **Ctrl+N** to start/stop recording.
+
+### Configuration
+
+- Config file: `~/.config/voice-notes/config.yaml`
+- Debug logs: `~/.config/voice-notes/debug.log`
+- Example config: `client/config.example.yaml`
+
