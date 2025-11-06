@@ -43,7 +43,7 @@ func NewSmartChunker(config SmartChunkerConfig) *SmartChunker {
 		config.MaxChunkDuration = 30 * time.Second // Safety limit
 	}
 	if config.VADEnergyThreshold == 0 {
-		config.VADEnergyThreshold = 500.0
+		config.VADEnergyThreshold = 100.0
 	}
 
 	// Create VAD

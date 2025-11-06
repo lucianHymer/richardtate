@@ -124,3 +124,41 @@ VAD struct {
 **Files**: server/internal/transcription/rnnoise.go, server/internal/transcription/vad.go, server/internal/transcription/chunker.go, server/internal/transcription/pipeline.go, server/internal/config/config.go, server/config.example.yaml, server/cmd/server/main.go
 ---
 
+### [02:17] [gotcha] RNNoise Temporarily Disabled - Pass-through Implementation
+**Details**: ## RNNoise Complexity Discovery
+
+**Issue**: The `github.com/xaionaro-go/audio` RNNoise implementation requires:
+- CGO build with `pkg-config` for native rnnoise library
+- Build tag: `-tags rnnoise`
+- 48kHz audio (not 16kHz like our pipeline)
+- Complex sample rate conversion logic
+
+**Decision**: Made RNNoise a pass-through (no actual denoising) for initial testing
+
+**Current Implementation** (`server/internal/transcription/rnnoise.go`):
+- All methods just pass data through unchanged
+- Logs warning: "DISABLED - Using pass-through"
+- Preserves API interface for future integration
+
+**Why This Works**:
+- VAD still operates on raw audio (just not denoised)
+- Can test VAD chunking logic independently
+- Simpler build process (no CGO dependencies)
+- Can add real RNNoise later once VAD is proven
+
+**Pipeline Flow Now**:
+```
+Raw Audio → Pass-through RNNoise → VAD → Smart Chunker → Whisper
+```
+
+**Future Integration**:
+When ready to add real RNNoise:
+1. Install rnnoise library system-wide
+2. Handle 48kHz↔16kHz sample rate conversion
+3. Replace pass-through methods with actual denoising
+4. Add build tag handling for optional RNNoise
+
+**Benefit**: Focus on VAD chunking first (the critical feature), add noise suppression as enhancement later.
+**Files**: server/internal/transcription/rnnoise.go
+---
+

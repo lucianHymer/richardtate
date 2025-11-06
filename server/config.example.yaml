@@ -47,8 +47,8 @@ vad:
   enabled: true
 
   # Energy threshold for speech detection (higher = requires louder speech)
-  # Range: 100-1000, default: 500
-  energy_threshold: 500.0
+  # Range: 50-1000, recommended: 100-200 for typical mics
+  energy_threshold: 100.0
 
   # Silence duration (ms) to trigger chunk boundary
   # Chunk on 1 second of continuous silence

@@ -35,7 +35,7 @@ func NewVAD(config VADConfig) *VoiceActivityDetector {
 		config.FrameDurationMs = 10 // 10ms frames
 	}
 	if config.EnergyThreshold == 0 {
-		config.EnergyThreshold = 500.0 // Tunable threshold
+		config.EnergyThreshold = 100.0 // Tunable threshold (good for most mics)
 	}
 	if config.SilenceThresholdMs == 0 {
 		config.SilenceThresholdMs = 1000 // 1 second
