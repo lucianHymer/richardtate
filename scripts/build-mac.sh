@@ -126,21 +126,7 @@ CLIENT_SIZE=$(du -h cmd/client/client | cut -f1)
 echo "✅ Client built: client/cmd/client/client ($CLIENT_SIZE)"
 echo ""
 
-# Check for config file
-cd "$PROJECT_ROOT/server"
-if [ ! -f config.yaml ]; then
-    echo "⚠️  No config.yaml found. Creating from example..."
-    if [ -f config.example.yaml ]; then
-        cp config.example.yaml config.yaml
-        echo "✅ Created config.yaml from example"
-        echo ""
-        echo "📝 Edit server/config.yaml to set your model path:"
-        echo "   transcription:"
-        echo "     model_path: \"/Users/$(whoami)/.cache/whisper/ggml-large-v3-turbo.bin\""
-        echo ""
-    fi
-fi
-
+cd "$PROJECT_ROOT"
 echo "✅ Build complete!"
 echo ""
 
