@@ -36,7 +36,26 @@ transcription:
 # Noise suppression
 noise_suppression:
   # Enable RNNoise
-  enabled: false
+  enabled: true
 
-  # RNNoise model path (optional, uses default if not specified)
-  model_path: ""
+  # RNNoise model path
+  model_path: "./models/rnnoise/lq.rnnn"
+
+# Voice Activity Detection (VAD)
+vad:
+  # Enable VAD-based chunking
+  enabled: true
+
+  # Energy threshold for speech detection (higher = requires louder speech)
+  # Range: 100-1000, default: 500
+  energy_threshold: 500.0
+
+  # Silence duration (ms) to trigger chunk boundary
+  # Chunk on 1 second of continuous silence
+  silence_threshold_ms: 1000
+
+  # Minimum chunk duration (ms) - avoid very short chunks
+  min_chunk_duration_ms: 500
+
+  # Maximum chunk duration (ms) - safety limit to prevent unbounded buffering
+  max_chunk_duration_ms: 30000

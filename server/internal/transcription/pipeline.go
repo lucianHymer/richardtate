@@ -10,14 +10,15 @@ import (
 )
 
 // TranscriptionPipeline handles the complete audio-to-text pipeline
+// Flow: Raw Audio → RNNoise → VAD/Chunker → Whisper → Results
 type TranscriptionPipeline struct {
-	whisper       *WhisperTranscriber
-	accumulator   *AudioAccumulator // DEPRECATED: Will be removed once VAD is added
-	audioBuffer   []byte           // Buffer ALL audio for whole-session transcription
-	audioBufferMu sync.Mutex
-	resultChan    chan TranscriptionResult
-	mu            sync.RWMutex
-	active        bool
+	whisper     *WhisperTranscriber
+	rnnoise     *RNNoiseProcessor
+	chunker     *SmartChunker
+	resultChan  chan TranscriptionResult
+	mu          sync.RWMutex
+	active      bool
+	debugWAV    bool // Enable WAV file debugging
 }
 
 // TranscriptionResult holds transcription output
@@ -29,19 +30,33 @@ type TranscriptionResult struct {
 
 // PipelineConfig holds configuration for the transcription pipeline
 type PipelineConfig struct {
-	WhisperConfig     WhisperConfig
-	MinAudioDuration  int // Minimum audio duration in milliseconds
-	MaxAudioDuration  int // Maximum audio duration in milliseconds
-	ResultChannelSize int // Size of result channel buffer
+	WhisperConfig      WhisperConfig
+	RNNoiseModelPath   string        // Path to RNNoise model
+	SilenceThreshold   time.Duration // Silence duration to trigger chunk (1s default)
+	MinChunkDuration   time.Duration // Minimum chunk duration
+	MaxChunkDuration   time.Duration // Maximum chunk duration
+	VADEnergyThreshold float64       // VAD energy threshold
+	ResultChannelSize  int           // Size of result channel buffer
+	EnableDebugWAV     bool          // Save WAV files for debugging
 }
 
 // NewTranscriptionPipeline creates a new transcription pipeline
 func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, error) {
+	log.Printf("[Pipeline] Initializing with RNNoise + VAD + Whisper")
+
 	// Create Whisper transcriber
 	whisper, err := NewWhisperTranscriber(config.WhisperConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Whisper transcriber: %w", err)
 	}
+	log.Printf("[Pipeline] ✓ Whisper initialized")
+
+	// Create RNNoise processor
+	rnnoise, err := NewRNNoiseProcessor(config.RNNoiseModelPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create RNNoise processor: %w", err)
+	}
+	log.Printf("[Pipeline] ✓ RNNoise initialized")
 
 	// Result channel
 	resultChanSize := config.ResultChannelSize
@@ -52,24 +67,29 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 
 	pipeline := &TranscriptionPipeline{
 		whisper:    whisper,
+		rnnoise:    rnnoise,
 		resultChan: resultChan,
 		active:     false,
+		debugWAV:   config.EnableDebugWAV,
 	}
 
-	// Create accumulator with callback
-	pipeline.accumulator = NewAudioAccumulator(AccumulatorConfig{
-		MinDuration: durationFromMs(config.MinAudioDuration),
-		MaxDuration: durationFromMs(config.MaxAudioDuration),
-		SampleRate:  16000,
-		ReadyCallback: pipeline.processAudio,
+	// Create smart chunker with VAD
+	pipeline.chunker = NewSmartChunker(SmartChunkerConfig{
+		SampleRate:         16000,
+		SilenceThreshold:   config.SilenceThreshold,
+		MinChunkDuration:   config.MinChunkDuration,
+		MaxChunkDuration:   config.MaxChunkDuration,
+		VADEnergyThreshold: config.VADEnergyThreshold,
+		ChunkReadyCallback: pipeline.transcribeChunk,
 	})
+	log.Printf("[Pipeline] ✓ Smart Chunker initialized")
 
+	log.Printf("[Pipeline] Pipeline ready: RNNoise → VAD → Whisper")
 	return pipeline, nil
 }
 
-// ProcessChunk processes an incoming audio chunk
-// For now, we just accumulate ALL audio and transcribe on Stop()
-// TODO: Add VAD for intelligent chunking at natural speech breaks
+// ProcessChunk processes an incoming audio chunk through the pipeline
+// Flow: Raw PCM → RNNoise → Chunker (with VAD) → [triggers transcription on silence]
 func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) error {
 	p.mu.RLock()
 	if !p.active {
@@ -78,33 +98,45 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 	}
 	p.mu.RUnlock()
 
-	// Accumulate audio into buffer for whole-session transcription
-	p.audioBufferMu.Lock()
-	p.audioBuffer = append(p.audioBuffer, audioData...)
-	bufferSize := len(p.audioBuffer)
-	p.audioBufferMu.Unlock()
-
-	// Log every 5 seconds of audio
-	if bufferSize%(16000*2*5) < len(audioData) {
-		durationSec := float64(bufferSize) / (16000.0 * 2.0) // 16kHz, 2 bytes per sample
-		log.Printf("[Pipeline] Buffered %.1f seconds of audio (%d bytes)", durationSec, bufferSize)
+	// Step 1: Denoise with RNNoise
+	denoisedBytes, err := p.rnnoise.ProcessBytes(audioData)
+	if err != nil {
+		log.Printf("[Pipeline] RNNoise error: %v", err)
+		// Continue with original audio on error
+		denoisedBytes = audioData
 	}
+
+	// Step 2: Convert to int16 samples for chunker
+	samples := make([]int16, len(denoisedBytes)/2)
+	for i := 0; i < len(samples); i++ {
+		samples[i] = int16(denoisedBytes[i*2]) | int16(denoisedBytes[i*2+1])<<8
+	}
+
+	// Step 3: Process through smart chunker (includes VAD)
+	// The chunker will call transcribeChunk() when a chunk is ready
+	p.chunker.ProcessSamples(samples)
 
 	return nil
 }
 
-// processAudio is called when the accumulator has enough audio
-func (p *TranscriptionPipeline) processAudio(audioData []byte) {
-	log.Printf("[Pipeline] Received %d bytes of PCM audio for transcription", len(audioData))
+// transcribeChunk is called by the chunker when a chunk is ready for transcription
+func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
+	duration := float64(len(samples)) / 16000.0
+	log.Printf("[Pipeline] Transcribing chunk: %.2f seconds (%d samples)", duration, len(samples))
 
-	// Convert PCM to float32 for Whisper
-	samples := ConvertPCMToFloat32(audioData)
+	// Save debug WAV if enabled
+	if p.debugWAV {
+		p.saveDebugWAV(samples)
+	}
 
-	log.Printf("[Pipeline] Processing %.2f seconds of audio (%d samples)",
-		float64(len(samples))/16000.0, len(samples))
+	// Convert int16 samples to float32 for Whisper
+	floatSamples := make([]float32, len(samples))
+	for i, sample := range samples {
+		floatSamples[i] = float32(sample) / 32768.0
+	}
 
 	// Transcribe
-	text, err := p.whisper.Transcribe(samples)
+	text, err := p.whisper.Transcribe(floatSamples)
 
 	// Send result
 	result := TranscriptionResult{
@@ -116,12 +148,29 @@ func (p *TranscriptionPipeline) processAudio(audioData []byte) {
 	select {
 	case p.resultChan <- result:
 		if err != nil {
-			log.Printf("[Pipeline] Transcription error: %v", err)
+			log.Printf("[Pipeline] ❌ Transcription error: %v", err)
 		} else {
-			log.Printf("[Pipeline] Transcription result: %q", text)
+			log.Printf("[Pipeline] ✓ Transcription: %q", text)
 		}
 	default:
-		log.Printf("[Pipeline] Result channel full, dropping result")
+		log.Printf("[Pipeline] ⚠️  Result channel full, dropping result")
+	}
+}
+
+// saveDebugWAV saves a chunk to WAV file for debugging
+func (p *TranscriptionPipeline) saveDebugWAV(samples []int16) {
+	// Convert samples to bytes
+	pcmData := make([]byte, len(samples)*2)
+	for i, sample := range samples {
+		pcmData[i*2] = byte(sample)
+		pcmData[i*2+1] = byte(sample >> 8)
+	}
+
+	wavPath := fmt.Sprintf("/tmp/chunk-%d.wav", time.Now().Unix())
+	if err := saveWAV(wavPath, pcmData, 16000, 1, 16); err != nil {
+		log.Printf("[Pipeline] Warning: Failed to save debug WAV: %v", err)
+	} else {
+		log.Printf("[Pipeline] Saved chunk to %s", wavPath)
 	}
 }
 
@@ -136,16 +185,15 @@ func (p *TranscriptionPipeline) Start() error {
 
 	p.active = true
 
-	// Clear audio buffer for new recording session
-	p.audioBufferMu.Lock()
-	p.audioBuffer = p.audioBuffer[:0]
-	p.audioBufferMu.Unlock()
+	// Reset components
+	p.chunker.Reset()
+	p.rnnoise.Reset()
 
-	log.Printf("[Pipeline] Started - buffering audio for whole-session transcription")
+	log.Printf("[Pipeline] Started - streaming transcription with VAD-based chunking")
 	return nil
 }
 
-// Stop deactivates the pipeline and transcribes all accumulated audio
+// Stop deactivates the pipeline and flushes any remaining audio
 func (p *TranscriptionPipeline) Stop() error {
 	p.mu.Lock()
 	if !p.active {
@@ -155,81 +203,24 @@ func (p *TranscriptionPipeline) Stop() error {
 	p.active = false
 	p.mu.Unlock()
 
-	// Get all accumulated audio
-	p.audioBufferMu.Lock()
-	audioData := make([]byte, len(p.audioBuffer))
-	copy(audioData, p.audioBuffer)
-	bufferSize := len(audioData)
-	p.audioBufferMu.Unlock()
+	log.Printf("[Pipeline] Stopping - flushing remaining audio")
 
-	log.Printf("[Pipeline] Stopped - transcribing %.1f seconds of audio",
-		float64(bufferSize)/(16000.0*2.0))
+	// Flush any remaining audio in chunker
+	p.chunker.Flush()
 
-	// Transcribe the entire recording
-	if bufferSize > 0 {
-		go p.transcribeSession(audioData)
-	} else {
-		log.Printf("[Pipeline] No audio to transcribe")
+	// Flush any remaining audio in RNNoise buffer
+	remainingSamples := p.rnnoise.Flush()
+	if len(remainingSamples) > 0 {
+		log.Printf("[Pipeline] Flushed %d samples from RNNoise buffer", len(remainingSamples))
+		p.chunker.ProcessSamples(remainingSamples)
+		p.chunker.Flush() // Flush again after adding RNNoise remainder
 	}
+
+	// Get final stats
+	stats := p.chunker.GetStats()
+	log.Printf("[Pipeline] Session stats: total_speech=%.1fs", stats.TotalSpeech.Seconds())
 
 	return nil
-}
-
-// transcribeSession transcribes an entire recording session
-func (p *TranscriptionPipeline) transcribeSession(audioData []byte) {
-	log.Printf("[Pipeline] Transcribing %d bytes of PCM audio", len(audioData))
-
-	// Inspect first few bytes
-	if len(audioData) >= 20 {
-		log.Printf("[Pipeline] First 20 bytes (hex): ")
-		for i := 0; i < 20; i++ {
-			fmt.Printf("%02x ", audioData[i])
-		}
-		fmt.Println()
-
-		// Interpret as int16 samples
-		fmt.Printf("[Pipeline] First 5 samples (int16): ")
-		for i := 0; i < 10 && i < len(audioData); i += 2 {
-			sample := int16(audioData[i]) | int16(audioData[i+1])<<8
-			fmt.Printf("%d ", sample)
-		}
-		fmt.Println()
-	}
-
-	// Save audio to WAV file for debugging
-	wavPath := "/tmp/last-recording.wav"
-	if err := saveWAV(wavPath, audioData, 16000, 1, 16); err != nil {
-		log.Printf("[Pipeline] Warning: Failed to save WAV file: %v", err)
-	} else {
-		log.Printf("[Pipeline] Saved audio to %s for debugging", wavPath)
-	}
-
-	// Convert PCM to float32 for Whisper
-	samples := ConvertPCMToFloat32(audioData)
-
-	log.Printf("[Pipeline] Converted to %d float32 samples (%.2f seconds)",
-		len(samples), float64(len(samples))/16000.0)
-
-	// Transcribe
-	text, err := p.whisper.Transcribe(samples)
-
-	// Send result
-	result := TranscriptionResult{
-		Text:      text,
-		Timestamp: currentTimeMillis(),
-		Error:     err,
-	}
-
-	select {
-	case p.resultChan <- result:
-		if err != nil {
-			log.Printf("[Pipeline] Transcription error: %v", err)
-		} else {
-			log.Printf("[Pipeline] Transcription complete: %q (length=%d)", text, len(text))
-		}
-	default:
-		log.Printf("[Pipeline] Result channel full, dropping result")
-	}
 }
 
 // Results returns the channel for receiving transcription results
@@ -248,10 +239,37 @@ func (p *TranscriptionPipeline) Close() error {
 		p.whisper.Close()
 	}
 
+	if p.rnnoise != nil {
+		p.rnnoise.Close()
+	}
+
 	close(p.resultChan)
 
 	log.Printf("[Pipeline] Closed")
 	return nil
+}
+
+// IsActive returns whether the pipeline is currently active
+func (p *TranscriptionPipeline) IsActive() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.active
+}
+
+// GetStats returns current pipeline statistics
+func (p *TranscriptionPipeline) GetStats() PipelineStats {
+	chunkerStats := p.chunker.GetStats()
+
+	return PipelineStats{
+		Active:         p.IsActive(),
+		ChunkerStats:   chunkerStats,
+	}
+}
+
+// PipelineStats holds pipeline statistics
+type PipelineStats struct {
+	Active       bool
+	ChunkerStats ChunkerStats
 }
 
 // saveWAV writes PCM audio data to a WAV file
@@ -273,13 +291,13 @@ func saveWAV(filename string, pcmData []byte, sampleRate, channels, bitsPerSampl
 
 	// "fmt " subchunk
 	file.WriteString("fmt ")
-	binary.Write(file, binary.LittleEndian, uint32(16))                         // Subchunk size
-	binary.Write(file, binary.LittleEndian, uint16(1))                          // Audio format (1 = PCM)
-	binary.Write(file, binary.LittleEndian, uint16(channels))                   // Number of channels
-	binary.Write(file, binary.LittleEndian, uint32(sampleRate))                 // Sample rate
+	binary.Write(file, binary.LittleEndian, uint32(16))                              // Subchunk size
+	binary.Write(file, binary.LittleEndian, uint16(1))                               // Audio format (1 = PCM)
+	binary.Write(file, binary.LittleEndian, uint16(channels))                        // Number of channels
+	binary.Write(file, binary.LittleEndian, uint32(sampleRate))                      // Sample rate
 	binary.Write(file, binary.LittleEndian, uint32(sampleRate*channels*bitsPerSample/8)) // Byte rate
-	binary.Write(file, binary.LittleEndian, uint16(channels*bitsPerSample/8))   // Block align
-	binary.Write(file, binary.LittleEndian, uint16(bitsPerSample))              // Bits per sample
+	binary.Write(file, binary.LittleEndian, uint16(channels*bitsPerSample/8))        // Block align
+	binary.Write(file, binary.LittleEndian, uint16(bitsPerSample))                   // Bits per sample
 
 	// "data" subchunk
 	file.WriteString("data")
@@ -289,21 +307,7 @@ func saveWAV(filename string, pcmData []byte, sampleRate, channels, bitsPerSampl
 	return nil
 }
 
-// IsActive returns whether the pipeline is currently active
-func (p *TranscriptionPipeline) IsActive() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.active
-}
-
 // Helper functions
-
-func durationFromMs(ms int) time.Duration {
-	if ms == 0 {
-		return 0
-	}
-	return time.Duration(ms) * time.Millisecond
-}
 
 func currentTimeMillis() int64 {
 	return int64(time.Now().UnixNano() / 1000000)

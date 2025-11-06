@@ -1,0 +1,231 @@
+package transcription
+
+import (
+	"log"
+	"sync"
+	"time"
+)
+
+// SmartChunkerConfig holds configuration for VAD-based chunking
+type SmartChunkerConfig struct {
+	SampleRate         int           // Audio sample rate (16kHz)
+	SilenceThreshold   time.Duration // Duration of silence to trigger chunk (1s)
+	MinChunkDuration   time.Duration // Minimum chunk duration (avoid tiny chunks)
+	MaxChunkDuration   time.Duration // Maximum chunk duration (safety limit)
+	VADEnergyThreshold float64       // Energy threshold for VAD
+	ChunkReadyCallback func([]int16) // Called when chunk is ready for transcription
+}
+
+// SmartChunker accumulates audio and chunks based on VAD silence detection
+type SmartChunker struct {
+	config      SmartChunkerConfig
+	vad         *VoiceActivityDetector
+	buffer      []int16
+	bufferMu    sync.Mutex
+	startTime   time.Time
+	lastChunk   time.Time
+	totalSpeech time.Duration
+}
+
+// NewSmartChunker creates a new VAD-based audio chunker
+func NewSmartChunker(config SmartChunkerConfig) *SmartChunker {
+	// Set defaults
+	if config.SampleRate == 0 {
+		config.SampleRate = 16000
+	}
+	if config.SilenceThreshold == 0 {
+		config.SilenceThreshold = 1 * time.Second // 1 second of silence
+	}
+	if config.MinChunkDuration == 0 {
+		config.MinChunkDuration = 500 * time.Millisecond // Avoid very short chunks
+	}
+	if config.MaxChunkDuration == 0 {
+		config.MaxChunkDuration = 30 * time.Second // Safety limit
+	}
+	if config.VADEnergyThreshold == 0 {
+		config.VADEnergyThreshold = 500.0
+	}
+
+	// Create VAD
+	vad := NewVAD(VADConfig{
+		SampleRate:         config.SampleRate,
+		FrameDurationMs:    10, // 10ms frames (160 samples at 16kHz)
+		EnergyThreshold:    config.VADEnergyThreshold,
+		SilenceThresholdMs: int(config.SilenceThreshold.Milliseconds()),
+	})
+
+	log.Printf("[SmartChunker] Initialized - silence_threshold=%v, min_chunk=%v, max_chunk=%v",
+		config.SilenceThreshold, config.MinChunkDuration, config.MaxChunkDuration)
+
+	return &SmartChunker{
+		config:    config,
+		vad:       vad,
+		buffer:    make([]int16, 0, config.SampleRate*int(config.MaxChunkDuration.Seconds())),
+		startTime: time.Now(),
+		lastChunk: time.Now(),
+	}
+}
+
+// ProcessSamples processes incoming audio samples
+// This should be called with denoised samples from RNNoise
+func (c *SmartChunker) ProcessSamples(samples []int16) {
+	if len(samples) == 0 {
+		return
+	}
+
+	c.bufferMu.Lock()
+	defer c.bufferMu.Unlock()
+
+	// Add samples to buffer
+	c.buffer = append(c.buffer, samples...)
+
+	// Process through VAD in 10ms frames (160 samples at 16kHz)
+	frameSize := c.config.SampleRate / 100 // 10ms = 160 samples at 16kHz
+	offset := 0
+
+	previouslySpeaking := c.vad.IsSpeaking()
+
+	for offset+frameSize <= len(samples) {
+		frame := samples[offset : offset+frameSize]
+
+		// Run VAD on frame
+		isSpeech := c.vad.ProcessFrame(frame)
+
+		// Log when speech state changes
+		if isSpeech != previouslySpeaking {
+			stats := c.vad.Stats()
+			if isSpeech {
+				log.Printf("[SmartChunker] 🗣️  SPEECH STARTED (was silent for %.2fs)", stats.SilenceDuration.Seconds())
+			} else {
+				log.Printf("[SmartChunker] 🤐 SILENCE STARTED (was speaking for %.2fs)", stats.SpeechDuration.Seconds())
+			}
+			previouslySpeaking = isSpeech
+		}
+
+		offset += frameSize
+	}
+
+	// Log current status periodically (every 500ms)
+	if len(c.buffer)%(c.config.SampleRate/2) < len(samples) {
+		stats := c.vad.Stats()
+		bufferDuration := c.getBufferDuration()
+		log.Printf("[SmartChunker] Status: speech=%v, silence=%.2fs, buffer=%.2fs, should_chunk=%v",
+			stats.IsSpeaking, stats.SilenceDuration.Seconds(), bufferDuration.Seconds(), c.vad.ShouldChunk())
+	}
+
+	// Check if we should chunk
+	c.checkAndChunk()
+}
+
+// checkAndChunk determines if we should trigger a chunk
+// Must be called with bufferMu locked
+func (c *SmartChunker) checkAndChunk() {
+	bufferDuration := c.getBufferDuration()
+	silenceDuration := c.vad.GetSilenceDuration()
+	shouldChunk := c.vad.ShouldChunk()
+
+	// Safety: Always chunk if we hit max duration
+	if bufferDuration >= c.config.MaxChunkDuration {
+		log.Printf("[SmartChunker] ⚠️  MAX DURATION REACHED (%.1fs) - FORCING CHUNK", bufferDuration.Seconds())
+		c.flushChunk()
+		return
+	}
+
+	// Check if VAD detected sufficient silence AND we have enough audio
+	if shouldChunk && bufferDuration >= c.config.MinChunkDuration {
+		log.Printf("[SmartChunker] ✂️  CHUNKING! Silence=%.2fs (threshold=%.2fs), Buffer=%.2fs → SENDING TO WHISPER",
+			silenceDuration.Seconds(), c.config.SilenceThreshold.Seconds(), bufferDuration.Seconds())
+		c.flushChunk()
+		return
+	}
+
+	// Debug: Show why we're NOT chunking
+	if shouldChunk && bufferDuration < c.config.MinChunkDuration {
+		log.Printf("[SmartChunker] ⏸️  Silence detected but buffer too short (%.2fs < %.2fs min)",
+			bufferDuration.Seconds(), c.config.MinChunkDuration.Seconds())
+	}
+}
+
+// flushChunk sends accumulated audio for transcription
+// Must be called with bufferMu locked
+func (c *SmartChunker) flushChunk() {
+	if len(c.buffer) == 0 {
+		log.Printf("[SmartChunker] No audio to chunk (empty buffer)")
+		return
+	}
+
+	// Make a copy for the callback
+	chunk := make([]int16, len(c.buffer))
+	copy(chunk, c.buffer)
+
+	duration := c.getBufferDuration()
+	vadStats := c.vad.Stats()
+
+	log.Printf("[SmartChunker] Flushing chunk: duration=%.2fs, samples=%d, speech=%.2fs",
+		duration.Seconds(), len(chunk), vadStats.SpeechDuration.Seconds())
+
+	// Clear buffer
+	c.buffer = c.buffer[:0]
+	c.lastChunk = time.Now()
+	c.totalSpeech += vadStats.SpeechDuration
+
+	// Reset VAD state
+	c.vad.Reset()
+
+	// Call callback asynchronously
+	if c.config.ChunkReadyCallback != nil {
+		go c.config.ChunkReadyCallback(chunk)
+	}
+}
+
+// Flush forces a flush of current buffer (called on Stop)
+func (c *SmartChunker) Flush() {
+	c.bufferMu.Lock()
+	defer c.bufferMu.Unlock()
+
+	log.Printf("[SmartChunker] Forcing flush of remaining buffer")
+	c.flushChunk()
+}
+
+// getBufferDuration returns the current buffer duration
+// Must be called with bufferMu locked
+func (c *SmartChunker) getBufferDuration() time.Duration {
+	numSamples := len(c.buffer)
+	seconds := float64(numSamples) / float64(c.config.SampleRate)
+	return time.Duration(seconds * float64(time.Second))
+}
+
+// GetStats returns current chunker statistics
+func (c *SmartChunker) GetStats() ChunkerStats {
+	c.bufferMu.Lock()
+	defer c.bufferMu.Unlock()
+
+	return ChunkerStats{
+		BufferDuration: c.getBufferDuration(),
+		BufferSamples:  len(c.buffer),
+		TotalSpeech:    c.totalSpeech,
+		TimeSinceChunk: time.Since(c.lastChunk),
+		VADStats:       c.vad.Stats(),
+	}
+}
+
+// Reset clears the chunker state
+func (c *SmartChunker) Reset() {
+	c.bufferMu.Lock()
+	defer c.bufferMu.Unlock()
+
+	c.buffer = c.buffer[:0]
+	c.vad.Reset()
+	c.startTime = time.Now()
+	c.lastChunk = time.Now()
+	c.totalSpeech = 0
+}
+
+// ChunkerStats holds statistics about the chunker
+type ChunkerStats struct {
+	BufferDuration time.Duration
+	BufferSamples  int
+	TotalSpeech    time.Duration
+	TimeSinceChunk time.Duration
+	VADStats       VADStats
+}

@@ -1,7 +1,7 @@
 # Whisper.cpp and RNNoise Installation Setup
 
-**Last Updated**: 2025-11-05
-**Phase**: 2 Preparation
+**Last Updated**: 2025-11-06
+**Phase**: 2 Implementation
 
 ## Overview
 Repeatable installation scripts for Phase 2 dependencies: Whisper.cpp for transcription and RNNoise for audio preprocessing.
@@ -10,7 +10,7 @@ Repeatable installation scripts for Phase 2 dependencies: Whisper.cpp for transc
 
 ### Official Sources
 - **Repository**: https://github.com/ggml-org/whisper.cpp
-- **Go bindings**: github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper
+- **Go bindings**: github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper (Official November 2025 bindings)
 - **Models**: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{model}.bin
 
 ### Recommended Model
@@ -46,8 +46,10 @@ export CGO_CFLAGS_ALLOW="-mfma|-mf16c"
 
 ### Package Information
 - **Go package**: github.com/xaionaro-go/audio/pkg/noisesuppression/implementations/rnnoise
-- **Package date**: April 2025
+- **Full module**: github.com/xaionaro-go/audio v0.0.0-20250426140416-6a9b3f1c8737
+- **Package date**: April 26, 2025
 - **Frame size**: 10ms (160 samples at 16kHz)
+- **Dependencies**: Includes observability tools (belt, xsync, etc.) for production use
 
 ### Pre-trained Model
 - **Model name**: "leavened-quisling"

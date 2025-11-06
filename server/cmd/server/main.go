@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 	"github.com/yourusername/streaming-transcription/server/internal/api"
@@ -52,9 +53,13 @@ func main() {
 			Language:  cfg.Transcription.Language,
 			Threads:   uint(cfg.Transcription.Threads),
 		},
-		MinAudioDuration:  1000, // 1 second
-		MaxAudioDuration:  3000, // 3 seconds
+		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
+		SilenceThreshold: time.Duration(cfg.VAD.SilenceThresholdMs) * time.Millisecond,
+		MinChunkDuration: time.Duration(cfg.VAD.MinChunkDurationMs) * time.Millisecond,
+		MaxChunkDuration: time.Duration(cfg.VAD.MaxChunkDurationMs) * time.Millisecond,
+		VADEnergyThreshold: cfg.VAD.EnergyThreshold,
 		ResultChannelSize: 10,
+		EnableDebugWAV: cfg.Server.Debug, // Save debug WAV files when in debug mode
 	}
 
 	pipeline, err := transcription.NewTranscriptionPipeline(pipelineConfig)

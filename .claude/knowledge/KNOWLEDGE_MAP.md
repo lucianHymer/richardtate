@@ -1,6 +1,6 @@
 # Knowledge Map
 
-**Last Updated**: 2025-11-05
+**Last Updated**: 2025-11-06
 
 This knowledge map provides a comprehensive index to all documented project knowledge. Each entry links to detailed documentation organized by category.
 
@@ -9,12 +9,13 @@ This knowledge map provides a comprehensive index to all documented project know
 System design, component relationships, and structural decisions.
 
 - [WebRTC Reconnection System](architecture/webrtc-reconnection-system.md) - Complete reconnection architecture with automatic recovery and 99% data integrity *(Updated: 2025-11-05)*
+- [Phase 2 Transcription Pipeline](architecture/transcription-pipeline.md) - Simplified MVP transcription using Whisper.cpp with audio accumulator *(Updated: 2025-11-06)*
 
 ## Dependencies
 
 External services, libraries, and third-party integrations.
 
-- [Whisper.cpp and RNNoise Setup](dependencies/whisper-and-rnnoise-setup.md) - Installation scripts and configuration for Phase 2 transcription dependencies *(Updated: 2025-11-05)*
+- [Whisper.cpp and RNNoise Setup](dependencies/whisper-and-rnnoise-setup.md) - Installation scripts and configuration for Phase 2 transcription dependencies *(Updated: 2025-11-06)*
 
 ## Patterns
 

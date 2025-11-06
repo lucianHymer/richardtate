@@ -30,6 +30,14 @@ type Config struct {
 		Enabled   bool   `yaml:"enabled"`
 		ModelPath string `yaml:"model_path"`
 	} `yaml:"noise_suppression"`
+
+	VAD struct {
+		Enabled            bool    `yaml:"enabled"`
+		EnergyThreshold    float64 `yaml:"energy_threshold"`     // VAD energy threshold (default: 500.0)
+		SilenceThresholdMs int     `yaml:"silence_threshold_ms"` // Silence duration to trigger chunk (default: 1000ms)
+		MinChunkDurationMs int     `yaml:"min_chunk_duration_ms"` // Minimum chunk duration (default: 500ms)
+		MaxChunkDurationMs int     `yaml:"max_chunk_duration_ms"` // Maximum chunk duration (default: 30000ms)
+	} `yaml:"vad"`
 }
 
 // ICEServer represents a WebRTC ICE server configuration

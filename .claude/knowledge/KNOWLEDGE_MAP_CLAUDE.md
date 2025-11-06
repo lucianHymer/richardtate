@@ -7,6 +7,7 @@ This is the Claude-facing knowledge map using @ references for direct file inclu
 System design, component relationships, and structural decisions.
 
 @architecture/webrtc-reconnection-system.md
+@architecture/transcription-pipeline.md
 
 ## Dependencies
 
