@@ -25,18 +25,22 @@ var upgrader = websocket.Upgrader{
 
 // Server handles HTTP and WebSocket requests
 type Server struct {
-	bindAddr      string
-	logger        *logger.ContextLogger
-	server        *http.Server
-	webrtcManager *webrtc.Manager
+	bindAddr         string
+	baseLogger       *logger.Logger        // For creating new components
+	logger           *logger.ContextLogger // For API server logging
+	server           *http.Server
+	webrtcManager    *webrtc.Manager
+	rnnoiseModelPath string // For calibration RNNoise processing
 }
 
 // New creates a new API server
-func New(bindAddr string, log *logger.Logger, webrtcMgr *webrtc.Manager) *Server {
+func New(bindAddr string, log *logger.Logger, webrtcMgr *webrtc.Manager, rnnoiseModelPath string) *Server {
 	return &Server{
-		bindAddr:      bindAddr,
-		logger:        log.With("api"),
-		webrtcManager: webrtcMgr,
+		bindAddr:         bindAddr,
+		baseLogger:       log,
+		logger:           log.With("api"),
+		webrtcManager:    webrtcMgr,
+		rnnoiseModelPath: rnnoiseModelPath,
 	}
 }
 
@@ -356,14 +360,16 @@ func (s *Server) handleAnalyzeAudio(w http.ResponseWriter, r *http.Request) {
 		samples[i] = int16(request.Audio[i*2]) | int16(request.Audio[i*2+1])<<8
 	}
 
-	// Apply RNNoise if available (matches production pipeline)
+	// Apply RNNoise processing if available (matches production pipeline)
 	processedSamples := samples
-	pipeline := s.webrtcManager.GetPipeline()
-	if pipeline != nil {
-		rnnoise := pipeline.GetRNNoise()
-		if rnnoise != nil {
-			var err error
-			processedSamples, err = rnnoise.ProcessChunk(samples)
+	if s.rnnoiseModelPath != "" {
+		// Create temporary RNNoise processor for calibration
+		processor, err := transcription.NewRNNoiseProcessor(s.rnnoiseModelPath, s.baseLogger)
+		if err != nil {
+			s.logger.Warn("Failed to create RNNoise processor for calibration, using raw audio: %v", err)
+		} else {
+			defer processor.Close()
+			processedSamples, err = processor.ProcessChunk(samples)
 			if err != nil {
 				s.logger.Warn("RNNoise processing failed, using raw audio: %v", err)
 				processedSamples = samples
@@ -371,6 +377,8 @@ func (s *Server) handleAnalyzeAudio(w http.ResponseWriter, r *http.Request) {
 				s.logger.Debug("Applied RNNoise to calibration audio (%d samples)", len(processedSamples))
 			}
 		}
+	} else {
+		s.logger.Debug("No RNNoise model path configured, analyzing raw audio")
 	}
 
 	// Calculate statistics on processed audio

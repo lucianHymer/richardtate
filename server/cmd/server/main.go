@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/pion/webrtc/v4"
 	"github.com/lucianHymer/streaming-transcription/server/internal/api"
@@ -80,7 +79,7 @@ func main() {
 	log.Info("WebRTC manager initialized with %d ICE servers", len(iceServers))
 
 	// Create API server
-	apiServer := api.New(cfg.Server.BindAddress, log, webrtcManager)
+	apiServer := api.New(cfg.Server.BindAddress, log, webrtcManager, cfg.NoiseSuppression.ModelPath)
 
 	// Start server in a goroutine
 	errChan := make(chan error, 1)

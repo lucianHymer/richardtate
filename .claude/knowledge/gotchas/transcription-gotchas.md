@@ -157,42 +157,42 @@ brew install rnnoise  # WRONG PACKAGE!
 
 **Discovered**: 2025-11-06 (Session 13)
 
-**Status**: KNOWN ISSUE (Not yet fixed)
+**Status**: ✅ FIXED (Session 14, 2025-11-06)
 
-**Problem**: VAD calibration currently analyzes raw audio, but production VAD sees RNNoise-processed audio.
+**Problem**: VAD calibration was analyzing raw audio, but production VAD sees RNNoise-processed audio.
 
 **Production Flow**:
 ```
 Raw Audio → RNNoise → VAD → Chunker → Whisper
 ```
 
-**Calibration Flow** (current):
+**Old Calibration Flow**:
 ```
 Raw Audio → VAD energy calculation (no RNNoise!)
 ```
 
-**Impact**:
-- Calibration sees noisier audio than production
-- Recommended thresholds may be too high
-- RNNoise typically reduces background noise by 30-50%
-- Background energy readings in calibration are artificially inflated
+**New Calibration Flow**:
+```
+Raw Audio → RNNoise (if available) → VAD energy calculation
+```
 
-**Example**:
-- Raw background noise: 150 (what calibration sees)
-- After RNNoise: 75 (what production VAD sees)
-- If calibration recommends threshold of 200, production might not detect speech!
+**Solution Implemented**:
+1. Added `rnnoiseModelPath` field to API server
+2. Calibration endpoint creates temporary RNNoise processor for each analysis
+3. Processes audio through RNNoise before calculating energy statistics
+4. Falls back to raw audio if RNNoise unavailable or errors occur
+5. Matches production pipeline exactly
 
-**Solution** (not yet implemented):
-Add RNNoise processing to `/api/v1/analyze-audio` endpoint:
-1. Check if server was built with `-tags rnnoise`
-2. If yes: run audio through RNNoise before calculating energy
-3. If no: use raw audio (current behavior)
-4. This makes calibration match production exactly
+**Implementation**:
+- API server stores RNNoise model path from config
+- Creates temporary `RNNoiseProcessor` for each calibration request
+- Properly cleans up processor after use
+- Logs whether RNNoise was applied or raw audio used
 
-**Workaround** (until fixed):
-Users can manually adjust recommended threshold down by ~30% if using RNNoise in production.
-
-**Files**: server/internal/api/server.go, server/internal/transcription/rnnoise_real.go
+**Files**:
+- `server/internal/api/server.go` - Added RNNoise processing to calibration
+- `server/cmd/server/main.go` - Pass RNNoise model path to API server
+- `server/internal/transcription/rnnoise_real.go` - RNNoise processor reused
 
 ---
 
