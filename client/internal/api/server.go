@@ -36,11 +36,12 @@ type Server struct {
 
 	// Calibration support
 	cfg         *config.Config
+	configPath  string
 	serverURL   string
 }
 
 // New creates a new API server
-func New(bindAddr string, log *logger.Logger, cfg *config.Config) *Server {
+func New(bindAddr string, log *logger.Logger, cfg *config.Config, configPath string) *Server {
 	// Convert ws:// to http:// for REST API
 	serverURL := cfg.Server.URL
 	if len(serverURL) > 5 && serverURL[:5] == "ws://" {
@@ -50,12 +51,13 @@ func New(bindAddr string, log *logger.Logger, cfg *config.Config) *Server {
 	}
 
 	return &Server{
-		bindAddr:  bindAddr,
-		logger:    log.With("api"),
-		baseLog:   log,
-		cfg:       cfg,
-		serverURL: serverURL,
-		wsClients: make(map[*websocket.Conn]bool),
+		bindAddr:   bindAddr,
+		logger:     log.With("api"),
+		baseLog:    log,
+		cfg:        cfg,
+		configPath: configPath,
+		serverURL:  serverURL,
+		wsClients:  make(map[*websocket.Conn]bool),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Allow all origins for local dev
@@ -462,17 +464,8 @@ func (s *Server) handleCalibrateSave(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Info("Saving threshold %.1f to config", req.Threshold)
 
-	// Determine config path (use environment variable or default)
-	configPath := os.Getenv("CLIENT_CONFIG_PATH")
-	if configPath == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			s.logger.Error("Failed to get home directory: %v", err)
-			http.Error(w, "Failed to determine config path", http.StatusInternalServerError)
-			return
-		}
-		configPath = homeDir + "/.streaming-transcription/config.yaml"
-	}
+	// Use the config path that was passed to the server
+	configPath := s.configPath
 
 	// Update config file
 	if err := s.updateClientConfig(configPath, req.Threshold); err != nil {

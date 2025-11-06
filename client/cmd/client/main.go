@@ -126,7 +126,7 @@ func main() {
 	}()
 
 	// Create API server for control
-	apiServer := api.New(cfg.Client.APIBindAddress, log, cfg)
+	apiServer := api.New(cfg.Client.APIBindAddress, log, cfg, *configPath)
 	globalAPIServer = apiServer // Set global for message handler
 	apiServer.SetHandlers(
 		func() error {

@@ -40,7 +40,10 @@ local function httpRequest(method, path, body, callback)
                 if success then
                     data = result
                 else
-                    errorMsg = "JSON decode failed: " .. responseBody
+                    -- Log the actual response for debugging
+                    print("JSON decode error for response:", responseBody)
+                    print("pcall error:", tostring(result))
+                    errorMsg = "JSON decode failed: " .. tostring(result)
                 end
             else
                 errorMsg = "Empty response from server"
