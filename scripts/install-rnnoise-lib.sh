@@ -3,9 +3,12 @@ set -e
 
 echo "Installing RNNoise library..."
 
+# Detect project root from script location
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+
 # Install directory
-#INSTALL_DIR="/workspace/project/deps/rnnoise"
-INSTALL_DIR="/Users/lucian/projects/richardtate/deps/rnnoise"
+INSTALL_DIR="$PROJECT_ROOT/deps/rnnoise"
 mkdir -p "$INSTALL_DIR"
 
 # Check if already installed
@@ -22,11 +25,18 @@ fi
 
 cd "$INSTALL_DIR/src"
 
+# Detect number of CPU cores (cross-platform)
+if command -v nproc &> /dev/null; then
+    NCPU=$(nproc)
+else
+    NCPU=$(sysctl -n hw.ncpu)
+fi
+
 # Build
 echo "Building RNNoise..."
 ./autogen.sh
 ./configure --prefix="$INSTALL_DIR"
-make -j$(nproc)
+make -j$NCPU
 make install
 
 echo "✓ RNNoise installed to $INSTALL_DIR"
