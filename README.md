@@ -2,7 +2,7 @@
 
 <p align="center">
     <i>
-		Dictation for the discerning individual.
+	Dictation for the discerning orator.
     </i>
     <br><br>
     <img
@@ -12,52 +12,140 @@
     />
 </p>
 
+Real-time voice-to-text transcription that streams your spoken words directly into any application. Press a hotkey, speak naturally, and watch your words appear at your cursor with near-realtime feedback.
 
-Real-time voice-to-text transcription that streams your spoken words directly into any application.
+## Architecture
 
-## What It Does
+Richardtate is a three-component system that processes your voice locally with state-of-the-art ML models:
 
-Richardtate lets you speak naturally and see your words appear in near-realtime, ready to be inserted wherever your cursor is. Perfect for:
+```
+┌─────────────────┐
+│   Hammerspoon   │  Hotkey control (Ctrl+N)
+│   Lua Script    │  Text insertion at cursor
+└────────┬────────┘  Visual recording indicator
+         │
+         │ HTTP API
+         ▼
+┌─────────────────┐
+│  Client Daemon  │  Audio capture (16kHz mono)
+│   (Go binary)   │  WebRTC streaming
+└────────┬────────┘  Reconnection logic
+         │
+         │ WebRTC DataChannel
+         │ (200ms chunks)
+         ▼
+┌─────────────────┐
+│     Server      │  RNNoise → VAD → Whisper
+│   (Go binary)   │  Streaming transcriptions
+└─────────────────┘  Local ML inference
+```
 
-- Writing documents and emails
-- Taking notes in Obsidian
-- Dictating code comments
-- Capturing thoughts quickly
+### The Audio Pipeline
 
-## Current Status
+The server implements a sophisticated real-time transcription pipeline:
 
-🚧 **In Active Development** - Currently building the core streaming functionality.
+```
+Raw Audio (200ms chunks @ 16kHz)
+  ↓
+┌─────────────────────────┐
+│  RNNoise Neural Net     │  Noise suppression
+│  (48kHz processing)     │  + sample rate conversion
+└───────────┬─────────────┘
+            ↓
+┌─────────────────────────┐
+│  Voice Activity Detect  │  Speech vs silence
+│  (energy-based)         │  Frame-level analysis
+└───────────┬─────────────┘
+            ↓
+┌─────────────────────────┐
+│  Smart Chunker          │  1s silence → transcribe
+│  (VAD-driven)           │  Natural speech boundaries
+└───────────┬─────────────┘
+            ↓
+┌─────────────────────────┐
+│  Whisper.cpp            │  Speech-to-text
+│  (large-v3-turbo)       │  Metal acceleration (Mac)
+└───────────┬─────────────┘
+            ↓
+     Streaming Results
+    (1-3 second latency)
+```
 
-This is an early version. The basic real-time transcription features are being implemented first, with advanced post-processing features planned for a future release.
+### Key Technical Features
 
-## How It Will Work
+**WebRTC Reliability**
+- Exponential backoff reconnection (1s → 30s max)
+- 20-second audio buffer during disconnections
+- 99% data integrity during server crashes
+- Automatic connection recovery
 
-1. Press **Ctrl+N** to start recording
-2. Speak naturally - your words appear in real-time
-3. Press **Ctrl+N** again to stop
-4. Press **Enter** to insert the text at your cursor
+**Audio Intelligence**
+- RNNoise removes background noise (keyboards, fans, traffic)
+- VAD chunks on natural speech pauses (no mid-sentence cuts)
+- Minimum 1s speech requirement (prevents Whisper hallucinations)
+- 16kHz ↔ 48kHz resampling for RNNoise compatibility
 
-## What's Being Built
+**Hammerspoon Integration**
+- System-wide hotkey (Ctrl+N) for recording control
+- Direct text insertion at cursor (works in any app!)
+- Minimal visual indicator during recording
+- HTTP API for client communication
 
-**Phase 1 (Current)**: Real-time streaming transcription
-- Instant feedback as you speak
-- Clean, noise-reduced audio processing
-- Reliable transcription with no lost words
+**Local-First Privacy**
+- All processing runs on your machine
+- No cloud API calls
+- Models loaded from disk
+- Audio never leaves your computer
 
-**Phase 2 (Planned)**: Smart text formatting
-- Multiple formatting modes (casual, professional, email, etc.)
-- One-key mode switching
-- Markdown support for note-taking
+## How It Works
 
-## Technical Notes
+1. **Press Ctrl+N** in Hammerspoon → HTTP request to client daemon
+2. **Client captures audio** → 16kHz mono PCM, 200ms chunks
+3. **WebRTC streams to server** → Reliable DataChannel transport
+4. **RNNoise cleans audio** → Neural noise suppression
+5. **VAD detects speech** → Waits for 1s of silence
+6. **Whisper transcribes** → Large-v3-turbo model (~1.6GB)
+7. **Text streams back** → Client receives transcription
+8. **Hammerspoon inserts** → Text appears at your cursor
 
-Behind the scenes, Richardtate uses:
-- Advanced noise reduction for clear audio
-- Real-time audio streaming
-- High-quality transcription
-- Local-first design for privacy
+Total latency: **1-3 seconds** from speech to text (on Apple Silicon with Metal acceleration).
 
-## Coming Soon
+## Tech Stack
 
-This README will be updated as features are completed. Stay tuned!
+**Languages**
+- Go (client + server)
+- Lua (Hammerspoon integration)
+
+**ML Models**
+- Whisper.cpp (large-v3-turbo) - Speech recognition
+- RNNoise (leavened-quisling) - Noise suppression
+
+**Communication**
+- WebRTC DataChannels - Real-time audio streaming
+- HTTP API - Hammerspoon ↔ Client
+- JSON - Transcription results
+
+**Platform**
+- macOS (primary target, Metal acceleration)
+- Hammerspoon - System automation framework
+- CGO - Native library bindings
+
+## Project Status
+
+✅ **V1 Complete** - Real-time streaming transcription with direct text insertion!
+
+**What Works:**
+- Real-time streaming transcription
+- RNNoise noise reduction
+- Smart VAD-based chunking
+- Direct text insertion (any app!)
+- WebRTC reconnection + buffering
+- Automatic debug logging
+- Hotkey control (Ctrl+N)
+
+**Coming in V2:**
+- Smart text formatting modes
+- Preview before insertion
+- LLM-powered cleanup
+- Markdown support
 
