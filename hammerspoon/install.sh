@@ -28,6 +28,11 @@ echo "✅ Created config directory: $HAMMERSPOON_DIR"
 # Get the script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 INIT_LUA="$SCRIPT_DIR/init.lua"
+CALIBRATION_LUA="$SCRIPT_DIR/calibration.lua"
+
+# Copy calibration.lua first (required dependency)
+echo "✅ Installing calibration.lua module"
+cp "$CALIBRATION_LUA" "$HAMMERSPOON_DIR/calibration.lua"
 
 # Copy or symlink the init.lua
 if [ -f "$HAMMERSPOON_DIR/init.lua" ]; then
@@ -84,6 +89,9 @@ echo ""
 echo "  3. Start the client daemon:"
 echo "     cd client && ./client"
 echo ""
-echo "  4. Press Ctrl+N to start recording!"
+echo "  4. Calibrate your microphone (first time):"
+echo "     Press Ctrl+Alt+C to open the calibration wizard"
+echo ""
+echo "  5. Press Ctrl+N to start recording!"
 echo ""
 echo "📖 See hammerspoon/README.md for detailed usage instructions."
