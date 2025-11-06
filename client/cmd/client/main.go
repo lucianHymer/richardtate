@@ -118,6 +118,15 @@ func main() {
 	apiServer.SetHandlers(
 		func() error {
 			log.Info("Start recording requested")
+
+			// Send control start message to server
+			if err := webrtcClient.SendControlStart(); err != nil {
+				log.Error("Failed to send control start: %v", err)
+				return err
+			}
+			log.Info("Sent control start to server")
+
+			// Start audio capture
 			if err := capturer.Start(); err != nil {
 				log.Error("Failed to start audio capture: %v", err)
 				return err
@@ -127,11 +136,20 @@ func main() {
 		},
 		func() error {
 			log.Info("Stop recording requested")
+
+			// Stop audio capture first
 			if err := capturer.Stop(); err != nil {
 				log.Error("Failed to stop audio capture: %v", err)
 				return err
 			}
 			log.Info("Audio capture stopped")
+
+			// Send control stop message to server
+			if err := webrtcClient.SendControlStop(); err != nil {
+				log.Error("Failed to send control stop: %v", err)
+				return err
+			}
+			log.Info("Sent control stop to server")
 			return nil
 		},
 	)

@@ -366,6 +366,24 @@ func (c *Client) SendPing() error {
 	return c.SendMessage(msg)
 }
 
+// SendControlStart sends a start command to the server to begin transcription
+func (c *Client) SendControlStart() error {
+	msg := &protocol.Message{
+		Type:      protocol.MessageTypeControlStart,
+		Timestamp: time.Now().UnixMilli(),
+	}
+	return c.SendMessage(msg)
+}
+
+// SendControlStop sends a stop command to the server to end transcription
+func (c *Client) SendControlStop() error {
+	msg := &protocol.Message{
+		Type:      protocol.MessageTypeControlStop,
+		Timestamp: time.Now().UnixMilli(),
+	}
+	return c.SendMessage(msg)
+}
+
 // SendAudioChunk sends an audio chunk to the server
 // If disconnected and reconnecting, chunks are buffered automatically
 func (c *Client) SendAudioChunk(data []byte, sampleRate, channels int) error {
