@@ -228,6 +228,11 @@ func (p *TranscriptionPipeline) Results() <-chan TranscriptionResult {
 	return p.resultChan
 }
 
+// GetRNNoise returns the RNNoise processor (for calibration endpoint)
+func (p *TranscriptionPipeline) GetRNNoise() *RNNoiseProcessor {
+	return p.rnnoise
+}
+
 // Close releases all resources
 func (p *TranscriptionPipeline) Close() error {
 	p.mu.Lock()

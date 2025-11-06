@@ -327,8 +327,25 @@ func (s *Server) handleAnalyzeAudio(w http.ResponseWriter, r *http.Request) {
 		samples[i] = int16(request.Audio[i*2]) | int16(request.Audio[i*2+1])<<8
 	}
 
-	// Calculate statistics
-	stats := calculateAudioStatistics(samples)
+	// Apply RNNoise if available (matches production pipeline)
+	processedSamples := samples
+	pipeline := s.webrtcManager.GetPipeline()
+	if pipeline != nil {
+		rnnoise := pipeline.GetRNNoise()
+		if rnnoise != nil {
+			var err error
+			processedSamples, err = rnnoise.ProcessChunk(samples)
+			if err != nil {
+				s.logger.Warn("RNNoise processing failed, using raw audio: %v", err)
+				processedSamples = samples
+			} else {
+				s.logger.Debug("Applied RNNoise to calibration audio (%d samples)", len(processedSamples))
+			}
+		}
+	}
+
+	// Calculate statistics on processed audio
+	stats := calculateAudioStatistics(processedSamples)
 
 	s.logger.Info("Analyzed %d samples: min=%.1f, max=%.1f, avg=%.1f, p5=%.1f, p95=%.1f",
 		stats.SampleCount, stats.Min, stats.Max, stats.Avg, stats.P5, stats.P95)
