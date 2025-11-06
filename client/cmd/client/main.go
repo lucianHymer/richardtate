@@ -88,23 +88,9 @@ func main() {
 	go func() {
 		defer audioWg.Done()
 		for chunk := range capturer.Chunks() {
-			// Convert audio chunk to protocol message
-			audioData := protocol.AudioChunkData{
-				Data:       chunk.Data,
-				SampleRate: chunk.SampleRate,
-				Channels:   chunk.Channels,
-				SequenceID: chunk.SequenceID,
-			}
-
-			// Marshal to JSON
-			data, err := json.Marshal(audioData)
-			if err != nil {
-				log.Error("Failed to marshal audio chunk: %v", err)
-				continue
-			}
-
-			// Send via WebRTC
-			if err := webrtcClient.SendAudioChunk(data, chunk.SampleRate, chunk.Channels); err != nil {
+			// Send raw PCM data via WebRTC
+			// SendAudioChunk will handle the JSON marshaling
+			if err := webrtcClient.SendAudioChunk(chunk.Data, chunk.SampleRate, chunk.Channels); err != nil {
 				log.Error("Failed to send audio chunk: %v", err)
 			} else {
 				log.Debug("Sent audio chunk: seq=%d, size=%d bytes", chunk.SequenceID, len(chunk.Data))
