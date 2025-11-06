@@ -9,11 +9,13 @@ import (
 
 // TranscriptionPipeline handles the complete audio-to-text pipeline
 type TranscriptionPipeline struct {
-	whisper     *WhisperTranscriber
-	accumulator *AudioAccumulator
-	resultChan  chan TranscriptionResult
-	mu          sync.RWMutex
-	active      bool
+	whisper       *WhisperTranscriber
+	accumulator   *AudioAccumulator // DEPRECATED: Will be removed once VAD is added
+	audioBuffer   []byte           // Buffer ALL audio for whole-session transcription
+	audioBufferMu sync.Mutex
+	resultChan    chan TranscriptionResult
+	mu            sync.RWMutex
+	active        bool
 }
 
 // TranscriptionResult holds transcription output
@@ -64,6 +66,8 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 }
 
 // ProcessChunk processes an incoming audio chunk
+// For now, we just accumulate ALL audio and transcribe on Stop()
+// TODO: Add VAD for intelligent chunking at natural speech breaks
 func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) error {
 	p.mu.RLock()
 	if !p.active {
@@ -72,14 +76,25 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 	}
 	p.mu.RUnlock()
 
-	// Add chunk to accumulator
-	p.accumulator.AddChunk(audioData)
+	// Accumulate audio into buffer for whole-session transcription
+	p.audioBufferMu.Lock()
+	p.audioBuffer = append(p.audioBuffer, audioData...)
+	bufferSize := len(p.audioBuffer)
+	p.audioBufferMu.Unlock()
+
+	// Log every 5 seconds of audio
+	if bufferSize%(16000*2*5) < len(audioData) {
+		durationSec := float64(bufferSize) / (16000.0 * 2.0) // 16kHz, 2 bytes per sample
+		log.Printf("[Pipeline] Buffered %.1f seconds of audio (%d bytes)", durationSec, bufferSize)
+	}
 
 	return nil
 }
 
 // processAudio is called when the accumulator has enough audio
 func (p *TranscriptionPipeline) processAudio(audioData []byte) {
+	log.Printf("[Pipeline] Received %d bytes of PCM audio for transcription", len(audioData))
+
 	// Convert PCM to float32 for Whisper
 	samples := ConvertPCMToFloat32(audioData)
 
@@ -118,27 +133,76 @@ func (p *TranscriptionPipeline) Start() error {
 	}
 
 	p.active = true
-	p.accumulator.Clear()
 
-	log.Printf("[Pipeline] Started")
+	// Clear audio buffer for new recording session
+	p.audioBufferMu.Lock()
+	p.audioBuffer = p.audioBuffer[:0]
+	p.audioBufferMu.Unlock()
+
+	log.Printf("[Pipeline] Started - buffering audio for whole-session transcription")
 	return nil
 }
 
-// Stop deactivates the pipeline and flushes remaining audio
+// Stop deactivates the pipeline and transcribes all accumulated audio
 func (p *TranscriptionPipeline) Stop() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if !p.active {
+		p.mu.Unlock()
 		return fmt.Errorf("pipeline not active")
 	}
-
-	// Flush any remaining audio
-	p.accumulator.Flush()
-
 	p.active = false
-	log.Printf("[Pipeline] Stopped")
+	p.mu.Unlock()
+
+	// Get all accumulated audio
+	p.audioBufferMu.Lock()
+	audioData := make([]byte, len(p.audioBuffer))
+	copy(audioData, p.audioBuffer)
+	bufferSize := len(audioData)
+	p.audioBufferMu.Unlock()
+
+	log.Printf("[Pipeline] Stopped - transcribing %.1f seconds of audio",
+		float64(bufferSize)/(16000.0*2.0))
+
+	// Transcribe the entire recording
+	if bufferSize > 0 {
+		go p.transcribeSession(audioData)
+	} else {
+		log.Printf("[Pipeline] No audio to transcribe")
+	}
+
 	return nil
+}
+
+// transcribeSession transcribes an entire recording session
+func (p *TranscriptionPipeline) transcribeSession(audioData []byte) {
+	log.Printf("[Pipeline] Transcribing %d bytes of PCM audio", len(audioData))
+
+	// Convert PCM to float32 for Whisper
+	samples := ConvertPCMToFloat32(audioData)
+
+	log.Printf("[Pipeline] Converted to %d float32 samples (%.2f seconds)",
+		len(samples), float64(len(samples))/16000.0)
+
+	// Transcribe
+	text, err := p.whisper.Transcribe(samples)
+
+	// Send result
+	result := TranscriptionResult{
+		Text:      text,
+		Timestamp: currentTimeMillis(),
+		Error:     err,
+	}
+
+	select {
+	case p.resultChan <- result:
+		if err != nil {
+			log.Printf("[Pipeline] Transcription error: %v", err)
+		} else {
+			log.Printf("[Pipeline] Transcription complete: %q (length=%d)", text, len(text))
+		}
+	default:
+		log.Printf("[Pipeline] Result channel full, dropping result")
+	}
 }
 
 // Results returns the channel for receiving transcription results

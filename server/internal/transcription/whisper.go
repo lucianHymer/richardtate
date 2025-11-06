@@ -68,6 +68,24 @@ func (w *WhisperTranscriber) Transcribe(audioSamples []float32) (string, error) 
 		return "", fmt.Errorf("empty audio samples")
 	}
 
+	// Calculate audio statistics for debugging
+	var sum, min, max float32
+	min = audioSamples[0]
+	max = audioSamples[0]
+	for _, sample := range audioSamples {
+		sum += sample
+		if sample < min {
+			min = sample
+		}
+		if sample > max {
+			max = sample
+		}
+	}
+	avg := sum / float32(len(audioSamples))
+
+	log.Printf("[Whisper] Audio stats: samples=%d, duration=%.2fs, min=%.4f, max=%.4f, avg=%.4f",
+		len(audioSamples), float64(len(audioSamples))/16000.0, min, max, avg)
+
 	// Process audio through Whisper
 	// We don't need callbacks for the simple case, use nil
 	err := w.ctx.Process(audioSamples, nil, nil, nil)
@@ -77,20 +95,26 @@ func (w *WhisperTranscriber) Transcribe(audioSamples []float32) (string, error) 
 
 	// Collect all segments into a single text
 	var fullText string
+	segmentCount := 0
 	for {
 		segment, err := w.ctx.NextSegment()
 		if err != nil {
 			break // EOF means we've processed all segments
 		}
+		segmentCount++
 
 		// Append segment text with space
 		text := segment.Text
+		log.Printf("[Whisper] Segment %d: %q (start=%.2fs, end=%.2fs)",
+			segmentCount, text, float64(segment.Start)/100.0, float64(segment.End)/100.0)
+
 		if len(fullText) > 0 && len(text) > 0 {
 			fullText += " "
 		}
 		fullText += text
 	}
 
+	log.Printf("[Whisper] Transcription complete: %d segments, text length=%d", segmentCount, len(fullText))
 	return fullText, nil
 }
 
