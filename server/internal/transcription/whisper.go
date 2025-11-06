@@ -2,6 +2,7 @@ package transcription
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
