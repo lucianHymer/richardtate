@@ -174,6 +174,19 @@ func (c *Capturer) Start() error {
 	}
 	c.device = device
 
+	// Check what the device is ACTUALLY configured with
+	fmt.Println("\n🔍 Actual Device Configuration:")
+	fmt.Printf("   Sample Rate: %d Hz\n", c.device.SampleRate())
+	fmt.Printf("   Format: %v\n", c.device.CaptureFormat())
+	fmt.Printf("   Channels: %d\n", c.device.CaptureChannels())
+	fmt.Println()
+
+	// Warn if sample rate doesn't match
+	if c.device.SampleRate() != SampleRate {
+		fmt.Printf("⚠️  WARNING: Device is using %d Hz, but we requested %d Hz!\n", c.device.SampleRate(), SampleRate)
+		fmt.Printf("⚠️  This will cause audio distortion. The device doesn't support 16kHz.\n\n")
+	}
+
 	// Start capture
 	err = c.device.Start()
 	if err != nil {
