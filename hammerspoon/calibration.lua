@@ -32,12 +32,21 @@ local function httpRequest(method, path, body, callback)
 
     hs.http.doAsyncRequest(url, method, bodyData, headers, function(status, responseBody, headers)
         if callback then
-            local success, data = pcall(hs.json.decode, responseBody)
-            if success then
-                callback(status, data)
+            local data = nil
+            local errorMsg = nil
+
+            if responseBody and responseBody ~= "" then
+                local success, result = pcall(hs.json.decode, responseBody)
+                if success then
+                    data = result
+                else
+                    errorMsg = "JSON decode failed: " .. responseBody
+                end
             else
-                callback(status, {error = responseBody})
+                errorMsg = "Empty response from server"
             end
+
+            callback(status, data, errorMsg)
         end
     end)
 end
@@ -337,16 +346,17 @@ local function recordAudio(callback)
     end)
 
     -- Make recording request
-    httpRequest("POST", "/api/calibrate/record", {duration_seconds = config.recordDuration}, function(status, data)
+    httpRequest("POST", "/api/calibrate/record", {duration_seconds = config.recordDuration}, function(status, data, errorMsg)
         timer:stop()
         state.isRecording = false
 
         if status == 200 and data then
             callback(data)
         else
+            local errorText = errorMsg or ("HTTP " .. tostring(status))
             hs.notify.new({
                 title = "Calibration Error",
-                informativeText = "Failed to record audio: " .. (data.error or "Unknown error")
+                informativeText = "Failed to record audio: " .. errorText
             }):send()
             calibration.close()
         end
@@ -374,7 +384,7 @@ local function handleClick(x, y)
                 httpRequest("POST", "/api/calibrate/calculate", {
                     background = state.backgroundStats,
                     speech = state.speechStats
-                }, function(status, data)
+                }, function(status, data, errorMsg)
                     if status == 200 and data then
                         state.recommendedThreshold = data.threshold
                         state.backgroundFramesAbove = data.background_frames_above_percent
@@ -382,9 +392,10 @@ local function handleClick(x, y)
                         state.currentStep = 3
                         drawStep3()
                     else
+                        local errorText = errorMsg or ("HTTP " .. tostring(status))
                         hs.notify.new({
                             title = "Calibration Error",
-                            informativeText = "Failed to calculate threshold"
+                            informativeText = "Failed to calculate: " .. errorText
                         }):send()
                         calibration.close()
                     end
@@ -396,17 +407,18 @@ local function handleClick(x, y)
         if x >= 100 and x <= 220 and y >= 320 and y <= 370 then
             httpRequest("POST", "/api/calibrate/save", {
                 threshold = state.recommendedThreshold
-            }, function(status, data)
-                if status == 200 and data.success then
+            }, function(status, data, errorMsg)
+                if status == 200 and data and data.success then
                     hs.notify.new({
                         title = "Calibration Complete",
                         informativeText = string.format("Threshold %.0f saved to config", state.recommendedThreshold)
                     }):send()
                     calibration.close()
                 else
+                    local errorText = errorMsg or ("HTTP " .. tostring(status))
                     hs.notify.new({
                         title = "Save Failed",
-                        informativeText = "Failed to save config"
+                        informativeText = "Failed to save: " .. errorText
                     }):send()
                 end
             end)
