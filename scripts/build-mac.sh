@@ -81,6 +81,7 @@ BUILD_TAGS=""
 if [ "$ENABLE_RNNOISE" = true ]; then
     export CGO_CFLAGS="$CGO_CFLAGS -I${RNNOISE_PREFIX}/include"
     export CGO_LDFLAGS="$CGO_LDFLAGS -L${RNNOISE_PREFIX}/lib -lrnnoise"
+    export PKG_CONFIG_PATH="${RNNOISE_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
     BUILD_TAGS="-tags rnnoise"
 fi
 
