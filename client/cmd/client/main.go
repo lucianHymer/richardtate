@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,8 +23,18 @@ import (
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
 
+// getDefaultConfigPath returns the XDG Base Directory compliant config path
+func getDefaultConfigPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "config.yaml" // Fallback to current directory
+	}
+	return filepath.Join(homeDir, ".config", "voice-notes", "config.yaml")
+}
+
 func main() {
-	configPath := flag.String("config", "config.yaml", "Path to configuration file")
+	defaultConfigPath := getDefaultConfigPath()
+	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
 	calibrateMode := flag.Bool("calibrate", false, "Run VAD calibration wizard")
 	autoSave := flag.Bool("yes", false, "Auto-save calibration results without prompting")
 	flag.Parse()
