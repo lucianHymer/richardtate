@@ -119,6 +119,11 @@ local function connectWebSocket()
         end
     end)
 
+    if not state.ws then
+        print("ERROR: Failed to create WebSocket object")
+        return
+    end
+
     state.ws:connect()
 end
 

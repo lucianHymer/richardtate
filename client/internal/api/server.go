@@ -6,25 +6,37 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 // Server handles the HTTP control API
 type Server struct {
-	bindAddr   string
-	logger     *logger.ContextLogger
-	server     *http.Server
-	onStart    func() error
-	onStop     func() error
-	isRunning  bool
+	bindAddr    string
+	logger      *logger.ContextLogger
+	server      *http.Server
+	onStart     func() error
+	onStop      func() error
+	isRunning   bool
 	isRunningMu sync.RWMutex
+
+	// WebSocket connections for transcription streaming
+	wsClients   map[*websocket.Conn]bool
+	wsClientsMu sync.RWMutex
+	wsUpgrader  websocket.Upgrader
 }
 
 // New creates a new API server
 func New(bindAddr string, log *logger.Logger) *Server {
 	return &Server{
-		bindAddr: bindAddr,
-		logger:   log.With("api"),
+		bindAddr:  bindAddr,
+		logger:    log.With("api"),
+		wsClients: make(map[*websocket.Conn]bool),
+		wsUpgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true // Allow all origins for local dev
+			},
+		},
 	}
 }
 
@@ -43,6 +55,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/stop", s.handleStop)
 	mux.HandleFunc("/status", s.handleStatus)
+	mux.HandleFunc("/transcriptions", s.handleTranscriptions)
 
 	s.server = &http.Server{
 		Addr:         s.bindAddr,
@@ -168,4 +181,58 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// handleTranscriptions upgrades to WebSocket and streams transcriptions
+func (s *Server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		s.logger.Error("WebSocket upgrade failed: %v", err)
+		return
+	}
+
+	s.wsClientsMu.Lock()
+	s.wsClients[conn] = true
+	s.wsClientsMu.Unlock()
+
+	s.logger.Info("WebSocket client connected")
+
+	// Keep connection alive and handle disconnect
+	defer func() {
+		s.wsClientsMu.Lock()
+		delete(s.wsClients, conn)
+		s.wsClientsMu.Unlock()
+		conn.Close()
+		s.logger.Info("WebSocket client disconnected")
+	}()
+
+	// Read messages from client (mainly to detect disconnect)
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
+	}
+}
+
+// BroadcastTranscription sends a transcription chunk to all connected WebSocket clients
+func (s *Server) BroadcastTranscription(text string, isFinal bool) {
+	message := map[string]interface{}{
+		"chunk": text,
+		"final": isFinal,
+	}
+
+	data, err := json.Marshal(message)
+	if err != nil {
+		s.logger.Error("Failed to marshal transcription: %v", err)
+		return
+	}
+
+	s.wsClientsMu.RLock()
+	defer s.wsClientsMu.RUnlock()
+
+	for conn := range s.wsClients {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			s.logger.Error("Failed to send to WebSocket client: %v", err)
+		}
+	}
 }

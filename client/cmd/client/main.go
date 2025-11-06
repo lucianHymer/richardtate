@@ -127,6 +127,7 @@ func main() {
 
 	// Create API server for control
 	apiServer := api.New(cfg.Client.APIBindAddress, log)
+	globalAPIServer = apiServer // Set global for message handler
 	apiServer.SetHandlers(
 		func() error {
 			log.Info("Start recording requested")
@@ -233,6 +234,9 @@ var globalLog *logger.Logger
 // Global debug logger (set in main)
 var globalDebugLog *debuglog.Logger
 
+// Global API server for broadcasting transcriptions (set in main)
+var globalAPIServer *api.Server
+
 // Session state for tracking complete transcriptions
 var (
 	sessionMu       sync.Mutex
@@ -258,6 +262,11 @@ func handleDataChannelMessage(msg *protocol.Message) {
 		}
 		fmt.Printf("📝 [partial] %s\n", transcript.Text)
 
+		// Broadcast to WebSocket clients
+		if globalAPIServer != nil {
+			globalAPIServer.BroadcastTranscription(transcript.Text, false)
+		}
+
 	case protocol.MessageTypeTranscriptFinal:
 		var transcript protocol.TranscriptData
 		if err := json.Unmarshal(msg.Data, &transcript); err != nil {
@@ -265,6 +274,11 @@ func handleDataChannelMessage(msg *protocol.Message) {
 			return
 		}
 		fmt.Printf("✅ %s\n", transcript.Text)
+
+		// Broadcast to WebSocket clients
+		if globalAPIServer != nil {
+			globalAPIServer.BroadcastTranscription(transcript.Text, true)
+		}
 
 		// Log chunk to debug log
 		if err := globalDebugLog.LogChunk(transcript.Text); err != nil {
