@@ -152,12 +152,33 @@ func (c *SmartChunker) flushChunk() {
 }
 
 // Flush forces a flush of current buffer (called on Stop)
+// Only flushes if there's sufficient speech content to avoid hallucinations
 func (c *SmartChunker) Flush() {
 	c.bufferMu.Lock()
 	defer c.bufferMu.Unlock()
 
-	c.log.Debug("Forcing flush of remaining buffer")
-	c.flushChunk()
+	// Check if we have sufficient speech content to transcribe
+	vadStats := c.vad.Stats()
+	minSpeechDuration := 1 * time.Second // Same threshold as regular chunks
+	bufferDuration := c.getBufferDuration()
+
+	if len(c.buffer) == 0 {
+		c.log.Debug("Flush called but buffer is empty")
+		return
+	}
+
+	// Only flush if we have enough actual speech
+	// This prevents hallucinations on trailing silence/noise
+	if vadStats.SpeechDuration >= minSpeechDuration {
+		c.log.Debug("Flushing final chunk with %.2fs of speech", vadStats.SpeechDuration.Seconds())
+		c.flushChunk()
+	} else {
+		c.log.Debug("Discarding final chunk: insufficient speech (%.2fs speech in %.2fs buffer)",
+			vadStats.SpeechDuration.Seconds(), bufferDuration.Seconds())
+		// Clear buffer without transcribing
+		c.buffer = c.buffer[:0]
+		c.vad.Reset()
+	}
 }
 
 // getBufferDuration returns the current buffer duration

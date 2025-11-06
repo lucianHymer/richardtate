@@ -88,3 +88,12 @@ All unused fields removed from config struct.
 **Files**: client/internal/config/config.go, client/config.example.yaml
 ---
 
+### [14:37] [gotcha] Whisper hallucination on final chunk
+**Details**: Whisper hallucinated "thank you" on the final chunk when recording stopped because Flush() was sending whatever remained in the buffer, even if it was mostly silence or trailing noise.
+
+Solution: Apply same speech duration threshold (1 second minimum) to final flush as we do for regular chunks. Now Flush() checks vadStats.SpeechDuration and only transcribes if >= 1 second of actual speech detected. Otherwise, discards the final chunk with debug log message.
+
+This prevents hallucinations on trailing silence while still allowing legitimate final chunks through.
+**Files**: server/internal/transcription/chunker.go
+---
+
