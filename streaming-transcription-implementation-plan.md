@@ -714,7 +714,403 @@ Remember: This replaces keyboard input for many workflows, so reliability and sp
 
 ---
 
-## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-05 Evening Session 6 - PHASE 2 INTEGRATION COMPLETE!)
+## 🚧 IMPLEMENTATION STATUS (Updated: 2025-11-05 Evening Session 7 - FIRST SUCCESSFUL TRANSCRIPTION! 🎉)
+
+### 📅 **SESSION UPDATE: 2025-11-05 Evening Session 7 - BREAKTHROUGH! WORKING END-TO-END!** 🎤→📝
+
+**TL;DR: SYSTEM WORKS! Fixed critical double-encoding bug. Audio captures cleanly. Whisper transcribes successfully. First real transcription on Mac hardware complete!**
+
+#### What We Accomplished This Session (Evening Session 7)
+
+This was the debugging marathon that got us to WORKING TRANSCRIPTION!
+
+**1. ✅ Fixed Control Message Bug**
+
+**Problem**: Client started audio capture but never told server to start transcription.
+
+**Solution**: Added `SendControlStart()` and `SendControlStop()` methods to WebRTC client.
+- Start handler sends `ControlStart` BEFORE starting audio capture
+- Stop handler sends `ControlStop` AFTER stopping audio capture
+- Server now properly activates/deactivates transcription pipeline
+
+**Files**: `client/internal/webrtc/client.go`, `client/cmd/client/main.go`
+
+**2. ✅ Switched to Whole-Session Transcription**
+
+**Problem**: Whisper needs longer audio context (10-30 seconds) for good results. Our 1-3 second chunking was too aggressive.
+
+**Solution**: Pipeline now buffers ALL audio during recording, transcribes ONCE on Stop.
+- `ProcessChunk()` just appends to buffer (no transcription)
+- `Stop()` triggers transcription of entire session
+- Logs buffering progress every 5 seconds
+- Much better transcription quality
+
+**Files**: `server/internal/transcription/pipeline.go`
+
+**Rationale**: Without VAD to detect natural speech breaks, chunking arbitrarily degrades quality. Better to wait for full context.
+
+**3. ✅ Added Audio Device Selection**
+
+**Problem**: macOS defaulted to wrong audio device (AB13X USB Audio), causing static.
+
+**Solution**: Added device selection by name via config.
+- Lists all available capture devices on startup
+- Searches by exact name match
+- Falls back to default if not found
+- User sets `device_name: "MacBook Pro Microphone"` in config
+
+**Files**: `client/internal/audio/capture.go`, `client/cmd/client/main.go`
+
+**Critical Learning**: ALWAYS list devices and show which is selected!
+
+**4. ✅ Added WAV File Export for Debugging**
+
+**Solution**: Server saves `/tmp/last-recording.wav` after each session.
+- Allows verification of audio quality
+- Essential for diagnosing capture issues
+- Helped us discover the encoding bug
+
+**Files**: `server/internal/transcription/pipeline.go`
+
+**5. ✅ Added Comprehensive Audio Diagnostics**
+
+To track down the static issue, we added:
+- Real-time audio level monitoring (RMS², sample range)
+- Device configuration verification (actual vs requested sample rate)
+- Raw byte inspection (hex dumps, int16 samples)
+- Both client-side and server-side logging
+
+**Files**: `client/internal/audio/capture.go`, `server/internal/api/server.go`, `server/internal/transcription/pipeline.go`
+
+**6. 🔥 CRITICAL BUG FIX: Double JSON Encoding**
+
+**THE BUG THAT BROKE EVERYTHING:**
+
+Client was doing:
+```go
+// Step 1: Marshal to JSON
+audioData := protocol.AudioChunkData{Data: chunk.Data, ...}
+data, _ := json.Marshal(audioData)  // Creates JSON string
+
+// Step 2: Pass JSON to SendAudioChunk
+webrtcClient.SendAudioChunk(data, ...)  // "data" is JSON, not PCM!
+```
+
+Then `SendAudioChunk()` did:
+```go
+// Step 3: Put JSON string into Data field
+audioData := protocol.AudioChunkData{
+    Data: data,  // This is JSON, not PCM bytes!
+    ...
+}
+audioJSON, _ := json.Marshal(audioData)  // Marshal AGAIN!
+```
+
+**Result**: Server received `{"sample_rate":16000,"channels":1,"data":"..."}` as the PCM data!
+
+**Symptoms**:
+- WAV file contained ASCII text `{"sample_rate":...` instead of audio
+- Playback sounded like high-pitched static with faint voice
+- Whisper transcribed it as "*sad music*" 😂
+
+**Fix**: Remove double-encoding in `client/cmd/client/main.go`:
+```go
+// Just pass raw PCM bytes - SendAudioChunk handles JSON
+webrtcClient.SendAudioChunk(chunk.Data, chunk.SampleRate, chunk.Channels)
+```
+
+**Files**: `client/cmd/client/main.go`
+
+**Commit**: `ddcf786 - fix: Remove double JSON encoding of audio data`
+
+#### 🔴 CRITICAL DEVIATIONS FOR TOMORROW'S TEAM
+
+**DEVIATION 1: Whole-Session Transcription Instead of Chunking**
+
+**Original Plan**: Transcribe every 1-3 seconds as audio accumulates.
+
+**What We Built**: Buffer entire recording, transcribe once on Stop.
+
+**Why**:
+- Whisper needs 10-30 seconds of context for good accuracy
+- Without VAD, arbitrary chunking breaks sentence flow
+- User feedback: "Whisper needs chunks, we should wait"
+
+**Impact**:
+- No streaming transcription during recording (V1 limitation)
+- All transcription happens AFTER you stop recording
+- Results appear in one batch, not incrementally
+
+**Next Step**: Add VAD to chunk at natural speech pauses (Phase 2 enhancement).
+
+**DEVIATION 2: Device Selection Required for macOS**
+
+**Original Plan**: Use default audio device.
+
+**Reality**: macOS often selects wrong device (USB devices, loopback, etc.).
+
+**Solution**: User MUST configure `device_name` in `client/config.yaml`.
+
+**Impact**: Not plug-and-play on Mac. Requires one-time config.
+
+**DEVIATION 3: No RNNoise/VAD Yet**
+
+**Original Plan**: Phase 2 includes RNNoise + VAD.
+
+**Status**: Implemented ONLY Whisper transcription.
+
+**Why**: Get basic flow working first, add preprocessing incrementally.
+
+**Impact**: Background noise will be transcribed. Can optimize later.
+
+**DEVIATION 4: Whisper API Limitations**
+
+**Attempted**: `SetSpeedUp()`, `SetMaxTextContext()`, `ResetTimings()`, `SetBeamSize()`
+
+**Reality**: These methods don't exist in the whisper.cpp Go bindings!
+
+**What Works**: `SetLanguage()`, `SetTranslate()`, `SetThreads()`, `SetTokenTimestamps()`
+
+**Lesson**: Don't assume API parity with Python/C++ versions!
+
+#### 🚨 CRITICAL THINGS THE NEXT TEAM MUST KNOW
+
+**1. The Double-Encoding Bug Pattern**
+
+NEVER do this:
+```go
+data := json.Marshal(something)
+SendFunction(data)  // If SendFunction marshals internally!
+```
+
+ALWAYS check if the send function already handles JSON encoding!
+
+**2. macOS Audio Device Selection is MANDATORY**
+
+Add this to `client/config.yaml`:
+```yaml
+audio:
+  device_name: "MacBook Pro Microphone"  # REQUIRED on Mac!
+```
+
+Run client once to see available devices, then configure the right one.
+
+**3. Model Path Must Be Absolute or Relative to Binary Location**
+
+These work:
+- ✅ `/Users/you/.cache/whisper/ggml-large-v3-turbo.bin` (absolute)
+- ✅ `./models/ggml-large-v3-turbo.bin` (relative to where you run the binary)
+
+These DON'T work:
+- ❌ `~/models/ggml-large-v3-turbo.bin` (shell expansion doesn't work in Go)
+
+**4. Build Script is REQUIRED on macOS**
+
+ALWAYS use:
+```bash
+./scripts/build-mac.sh
+```
+
+Don't try to set CGO variables manually. The script handles Homebrew paths correctly.
+
+**5. Transcription Lag is Intentional**
+
+Users won't see transcriptions until they hit STOP. This is by design (whole-session approach).
+
+When you add VAD, you can bring back incremental results.
+
+**6. Sample Rate is Always 16kHz**
+
+Don't change this! Whisper expects 16kHz. The client config says 16000, the device captures at 16000, everything is 16000.
+
+Changing this will break everything.
+
+**7. WAV File is Your Debug Best Friend**
+
+Every recording saves to `/tmp/last-recording.wav`. ALWAYS play this back when debugging:
+```bash
+afplay /tmp/last-recording.wav
+```
+
+If it sounds bad, problem is before the server. If it sounds good, problem is Whisper config.
+
+**8. Whisper Transcribes Silence/Noise**
+
+Without VAD, Whisper will try to transcribe everything, including:
+- Silence → empty string or hallucinations like "*sad music*"
+- Background noise → random words
+- Mouth sounds → gibberish
+
+This is NORMAL without VAD. Add RNNoise/VAD to fix.
+
+**9. First Recording Takes 2-3 Seconds to Start**
+
+Whisper model loading is slow (~1.6GB). The server startup delay is expected:
+```
+whisper_init_from_file_with_params_no_state: loading model...
+```
+
+This only happens once at server startup.
+
+**10. Client Config Lives in Two Places**
+
+There's config for:
+- Server: `server/config.yaml`
+- Client: `client/config.yaml` (not in the repo!)
+
+The user must create `client/config.yaml` with their device name!
+
+#### Current System Status
+
+**✅ WORKING:**
+- End-to-end audio capture (Mac microphone)
+- WebRTC streaming with reconnection
+- Whisper transcription (whole-session)
+- WAV file export for debugging
+- Device selection by name
+- Metal GPU acceleration on Mac M4 Pro
+
+**⏳ NOT YET IMPLEMENTED:**
+- RNNoise (noise suppression)
+- VAD (voice activity detection)
+- Streaming transcription (shows results during recording)
+- Client-side display of transcription results
+- Debug log file (planned for V1)
+- Post-processing modes (V2 feature)
+
+**🐛 KNOWN ISSUES:**
+- Whisper sometimes hallucinates on silence ("*sad music*", "*clicking*")
+- No incremental feedback during long recordings
+- Background noise gets transcribed
+- Only one recording session at a time (single shared pipeline)
+
+#### What's Next: Polish for V1 Completion
+
+**Immediate Tasks:**
+
+1. **Client-Side Transcription Display**
+   - Client receives `MessageTypeTranscriptFinal` but doesn't show it
+   - Add terminal output or prepare for UI window
+   - Show user what was transcribed
+
+2. **Add Debug Log File** (V1 requirement)
+   - Rolling 8MB log at `~/.streaming-transcription/debug.log`
+   - Append each transcription with timestamp
+   - Recovery mechanism if UI crashes
+
+3. **Remove Diagnostic Logging**
+   - Clean up all the hex dump / audio level logging
+   - Keep only essential logs
+   - Production-ready logging levels
+
+4. **Testing on Real Hardware**
+   - Long recording sessions (5+ minutes)
+   - Multiple start/stop cycles
+   - Network interruption testing
+   - Memory leak verification
+
+5. **Documentation**
+   - Update README with device selection requirement
+   - Add troubleshooting section
+   - macOS setup instructions
+
+**Future Enhancements (Phase 2+):**
+
+- Add RNNoise for clean audio
+- Implement VAD for smart chunking
+- Streaming transcription results
+- Multiple concurrent sessions
+- Post-processing modes (V2)
+
+#### Files Modified This Session
+
+**Core Bug Fixes:**
+- `client/cmd/client/main.go` - Removed double JSON encoding
+- `client/internal/webrtc/client.go` - Added control messages
+
+**Transcription Strategy:**
+- `server/internal/transcription/pipeline.go` - Whole-session buffering, WAV export
+- `server/internal/transcription/whisper.go` - Simplified API usage
+
+**Audio Device Selection:**
+- `client/internal/audio/capture.go` - Device listing and selection by name
+
+**Diagnostics:**
+- `server/internal/api/server.go` - Chunk inspection logging
+- Multiple files - Audio level monitoring, hex dumps, sample analysis
+
+#### Test Results
+
+**Hardware**: Mac M4 Pro with Metal acceleration
+**Microphone**: MacBook Pro Microphone (built-in)
+**Sample Recording**: 5-10 seconds of speech
+
+**Client Logs**:
+```
+🎤 Audio level: RMS²=508539, range=[-1359 to 1316]
+Sent audio chunk: seq=0, size=6400 bytes
+```
+
+**Server Logs**:
+```
+[Whisper] Audio stats: samples=85965, duration=5.37s, min=0.2670, max=0.9783
+[Whisper] Segment 1: "Hello this is a test of the transcription system"
+[Pipeline] Transcription complete: "Hello this is a test of the transcription system"
+```
+
+**WAV Playback**: Clean, clear audio matching input ✅
+
+**Transcription Quality**: Excellent for clear speech, hallucinations on silence
+
+**Performance**: ~500ms transcription time for 5 seconds of audio (Metal GPU)
+
+#### Commit History (Session 7)
+
+```
+1463c91 - fix: Remove unused json import
+ddcf786 - fix: Remove double JSON encoding of audio data ⭐ THE BIG FIX
+b8e1bf4 - debug: Log first audio chunk after JSON unmarshal
+1e638c4 - debug: Add server-side PCM data inspection
+7ff956c - debug: Add real-time audio level monitoring
+3f708f6 - debug: Add raw audio data inspection on first callback
+660df56 - debug: Add actual device configuration diagnostics
+122ad9d - feat: Add audio device selection by name
+67ed2df - fix: Remove DeviceInfo call causing type mismatch
+0bfef06 - debug: Add audio device listing to diagnose capture issues
+daf32cf - fix: Remove unsupported Whisper API calls
+fd3c7f2 - feat: Add WAV export and improve Whisper configuration
+02c3c4f - refactor: Switch to whole-session transcription
+da66ba7 - fix: Add control message sending to activate server transcription
+3d1a53d - fix: Add missing log import in whisper.go
+```
+
+#### Lessons Learned
+
+**1. Always Verify Audio Format at Every Step**
+
+Don't assume data is what you think it is. We spent hours debugging because we didn't verify the actual bytes being transmitted.
+
+**2. List Available Devices Always**
+
+Never assume the "default" device is correct. macOS especially loves to pick USB devices or loopback interfaces.
+
+**3. Play Back the WAV File**
+
+Your ears are the best debugger. If the WAV sounds bad, don't waste time on Whisper config.
+
+**4. Whole-Session vs Streaming is a Product Decision**
+
+We chose whole-session for V1 because it's simpler and gives better results. VAD-based streaming is a phase 2 enhancement.
+
+**5. Go Bindings May Not Match C++ API**
+
+Don't copy Whisper examples from C++ docs. The Go bindings are more limited.
+
+**6. Double-Encoding is Easy to Miss**
+
+When you have multiple layers (capture → protocol → network), it's easy to encode twice. Always trace the data flow!
+
+---
 
 ### 📅 **SESSION UPDATE: 2025-11-05 Evening Session 6 - PHASE 2 INTEGRATION COMPLETE!** 🎉
 
