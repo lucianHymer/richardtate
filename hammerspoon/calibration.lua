@@ -79,7 +79,7 @@ end
 
 -- Draw step 1: Background recording
 local function drawStep1()
-    state.window:replaceElements({
+    local elements = {
         -- Background
         {
             type = "rectangle",
@@ -114,29 +114,35 @@ local function drawStep1()
             textAlignment = "center",
             frame = {x = 40, y = 120, w = 420, h = 100},
         },
-        -- Button background (if not recording)
-        state.isRecording and {} or {
+    }
+
+    -- Add button background only if not recording
+    if not state.isRecording then
+        table.insert(elements, {
             type = "rectangle",
             action = "fill",
             fillColor = {red = 0.2, green = 0.6, blue = 1.0, alpha = 1.0},
             roundedRectRadii = {xRadius = 8, yRadius = 8},
             frame = {x = 175, y = 300, w = 150, h = 50},
-        },
-        -- Button text
-        {
-            type = "text",
-            text = state.isRecording and ("Recording... " .. math.floor(state.recordProgress or 0) .. "s") or "Start Recording",
-            textSize = 18,
-            textColor = {white = 1, alpha = 1},
-            textAlignment = "center",
-            frame = {x = 175, y = 312, w = 150, h = 30},
-        },
+        })
+    end
+
+    -- Button text
+    table.insert(elements, {
+        type = "text",
+        text = state.isRecording and ("Recording... " .. math.floor(state.recordProgress or 0) .. "s") or "Start Recording",
+        textSize = 18,
+        textColor = {white = 1, alpha = 1},
+        textAlignment = "center",
+        frame = {x = 175, y = 312, w = 150, h = 30},
     })
+
+    state.window:replaceElements(elements)
 end
 
 -- Draw step 2: Speech recording
 local function drawStep2()
-    state.window:replaceElements({
+    local elements = {
         -- Background
         {
             type = "rectangle",
@@ -181,24 +187,30 @@ local function drawStep2()
             textAlignment = "center",
             frame = {x = 40, y = 230, w = 420, h = 40},
         },
-        -- Button background (if not recording)
-        state.isRecording and {} or {
+    }
+
+    -- Add button background only if not recording
+    if not state.isRecording then
+        table.insert(elements, {
             type = "rectangle",
             action = "fill",
             fillColor = {red = 0.2, green = 0.6, blue = 1.0, alpha = 1.0},
             roundedRectRadii = {xRadius = 8, yRadius = 8},
             frame = {x = 175, y = 300, w = 150, h = 50},
-        },
-        -- Button text
-        {
-            type = "text",
-            text = state.isRecording and ("Recording... " .. math.floor(state.recordProgress or 0) .. "s") or "Start Recording",
-            textSize = 18,
-            textColor = {white = 1, alpha = 1},
-            textAlignment = "center",
-            frame = {x = 175, y = 312, w = 150, h = 30},
-        },
+        })
+    end
+
+    -- Button text
+    table.insert(elements, {
+        type = "text",
+        text = state.isRecording and ("Recording... " .. math.floor(state.recordProgress or 0) .. "s") or "Start Recording",
+        textSize = 18,
+        textColor = {white = 1, alpha = 1},
+        textAlignment = "center",
+        frame = {x = 175, y = 312, w = 150, h = 30},
     })
+
+    state.window:replaceElements(elements)
 end
 
 -- Draw step 3: Results and save
