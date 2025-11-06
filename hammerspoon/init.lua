@@ -1,16 +1,8 @@
 -- Streaming Transcription Hammerspoon Integration
 -- Simple hotkey-triggered voice transcription with direct text insertion
 
--- Load required extensions
-local websocket = require("hs.websocket")
-local http = require("hs.http")
-local hotkey = require("hs.hotkey")
-local canvas = require("hs.canvas")
-local screen = require("hs.screen")
-local eventtap = require("hs.eventtap")
-local json = require("hs.json")
-local timer = require("hs.timer")
-local notify = require("hs.notify")
+-- Load required extensions (use hs. prefix for safety)
+-- Some modules work with require(), others need hs. global access
 
 -- Configuration
 local config = {
@@ -29,7 +21,7 @@ local state = {
 -- HTTP helper
 local function httpRequest(method, path, callback)
     local url = config.daemonURL .. path
-    http.asyncRequest(url, method, nil, nil, function(status, body, headers)
+    hs.http.asyncRequest(url, method, nil, nil, function(status, body, headers)
         if callback then
             callback(status, body)
         end
@@ -38,7 +30,7 @@ end
 
 -- Indicator UI (minimal floating window)
 local function createIndicator()
-    local mainScreen = screen.mainScreen()
+    local mainScreen = hs.screen.mainScreen()
     local frame = mainScreen:frame()
 
     -- Position: top-right corner with 20px margin
@@ -47,7 +39,7 @@ local function createIndicator()
     local x = frame.x + frame.w - width - 20
     local y = frame.y + 20
 
-    local canvasObj = canvas.new({x = x, y = y, w = width, h = height})
+    local canvasObj = hs.canvas.new({x = x, y = y, w = width, h = height})
 
     -- Background (semi-transparent dark)
     canvasObj:appendElements({
@@ -100,12 +92,12 @@ local function connectWebSocket()
         state.ws:close()
     end
 
-    state.ws = websocket.new(config.wsURL, function(event, message)
+    state.ws = hs.websocket.new(config.wsURL, function(event, message)
         if event == "message" then
-            local success, data = pcall(json.decode, message)
+            local success, data = pcall(hs.json.decode, message)
             if success and data.chunk then
                 -- Insert text directly at cursor position!
-                eventtap.keyStrokes(data.chunk)
+                hs.eventtap.keyStrokes(data.chunk)
             elseif success and data.final then
                 -- Recording complete (optional: could show notification)
                 print("Transcription complete: " .. (data.full_text or ""))
@@ -174,7 +166,7 @@ local function stopRecording()
     end)
 
     -- Disconnect WebSocket (give it a moment for final chunks)
-    timer.doAfter(1.0, function()
+    hs.timer.doAfter(1.0, function()
         disconnectWebSocket()
         state.recording = false
     end)
@@ -190,10 +182,10 @@ local function toggleRecording()
 end
 
 -- Bind hotkey
-hotkey.bind(config.hotkey.mods, config.hotkey.key, toggleRecording)
+hs.hotkey.bind(config.hotkey.mods, config.hotkey.key, toggleRecording)
 
 -- Cleanup on reload
-hotkey.bind({"cmd", "alt", "ctrl"}, "r", function()
+hs.hotkey.bind({"cmd", "alt", "ctrl"}, "r", function()
     if state.recording then
         stopRecording()
     end
@@ -201,7 +193,7 @@ hotkey.bind({"cmd", "alt", "ctrl"}, "r", function()
 end)
 
 -- Notification on load
-notify.new({
+hs.notify.new({
     title = "Streaming Transcription",
     informativeText = "Press Ctrl+N to start/stop recording"
 }):send()
