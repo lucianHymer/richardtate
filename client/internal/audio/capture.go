@@ -125,12 +125,47 @@ func (c *Capturer) Start() error {
 		deviceConfig.Capture.Format, deviceConfig.Capture.Channels, deviceConfig.SampleRate)
 
 	// Data callback - called by malgo when audio data is available
+	firstCallback := true
 	onRecvFrames := func(pSample2, pSample []byte, framecount uint32) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 
 		if !c.isRunning {
 			return
+		}
+
+		// Debug first few samples to check data sanity
+		if firstCallback && len(pSample) >= 20 {
+			firstCallback = false
+			fmt.Printf("\n📊 First audio data inspection:\n")
+			fmt.Printf("   Framecount: %d\n", framecount)
+			fmt.Printf("   pSample2 length: %d bytes\n", len(pSample2))
+			fmt.Printf("   pSample length: %d bytes\n", len(pSample))
+
+			// Check which buffer has data
+			if len(pSample2) > 0 && len(pSample2) >= 20 {
+				fmt.Printf("   ⚠️  pSample2 has data! First 20 bytes (hex): ")
+				for i := 0; i < 20; i++ {
+					fmt.Printf("%02x ", pSample2[i])
+				}
+				fmt.Printf("\n")
+			}
+
+			if len(pSample) >= 20 {
+				fmt.Printf("   pSample first 20 bytes (hex): ")
+				for i := 0; i < 20; i++ {
+					fmt.Printf("%02x ", pSample[i])
+				}
+				fmt.Printf("\n")
+
+				// Interpret as int16 samples
+				fmt.Printf("   First 5 samples as int16: ")
+				for i := 0; i < 10 && i < len(pSample); i += 2 {
+					sample := int16(pSample[i]) | int16(pSample[i+1])<<8
+					fmt.Printf("%d ", sample)
+				}
+				fmt.Printf("\n\n")
+			}
 		}
 
 		// Append incoming data to buffer
