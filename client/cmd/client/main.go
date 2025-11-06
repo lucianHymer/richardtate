@@ -13,6 +13,7 @@ import (
 
 	"github.com/lucianHymer/streaming-transcription/client/internal/api"
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
+	"github.com/lucianHymer/streaming-transcription/client/internal/calibrate"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
 	"github.com/lucianHymer/streaming-transcription/client/internal/webrtc"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
@@ -21,6 +22,8 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "Path to configuration file")
+	calibrateMode := flag.Bool("calibrate", false, "Run VAD calibration wizard")
+	autoSave := flag.Bool("yes", false, "Auto-save calibration results without prompting")
 	flag.Parse()
 
 	// Load configuration
@@ -37,6 +40,20 @@ func main() {
 	// Initialize logger
 	log := logger.New(cfg.Client.Debug)
 	globalLog = log // Set global logger for message handler
+
+	// Run calibration wizard if --calibrate flag is set
+	if *calibrateMode {
+		wizard, err := calibrate.NewWizard(cfg, log)
+		if err != nil {
+			log.Fatal("Failed to create calibration wizard: %v", err)
+		}
+
+		if err := wizard.Run(*configPath, *autoSave); err != nil {
+			log.Fatal("Calibration failed: %v", err)
+		}
+
+		return
+	}
 
 	log.Info("Starting streaming transcription client")
 	log.Info("Config: server_url=%s, api_bind_address=%s, debug=%v",

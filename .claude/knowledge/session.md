@@ -165,3 +165,114 @@ JSON: `{"timestamp":"2025/11/06 04:58:23.123456","level":"INFO","component":"aud
 **Files**: shared/logger/logger.go, client/cmd/client/main.go, client/internal/audio/capture.go, client/internal/webrtc/client.go, client/internal/api/server.go, server/cmd/server/main.go
 ---
 
+### [15:37] [architecture] VAD Calibration Wizard - Server-Side Design Decision
+**Details**: **Decision**: VAD calibration wizard will use SERVER-SIDE energy calculation, not client-side.
+
+**Rationale**:
+1. VAD implementation lives in `server/internal/transcription/vad.go`
+2. Client should remain lightweight (potentially Arduino-compatible!)
+3. Guarantees calibration uses EXACT same energy calculation as production VAD
+4. Avoids code duplication and drift between client/server implementations
+
+**Implementation Approach**:
+- Add calibration API endpoints to server
+- Client captures audio during calibration phases
+- Client sends audio to server with calibration flags ("background" / "speech")
+- Server runs VAD energy calculation and returns statistics
+- Client displays results, calculates recommended threshold, offers to save to config
+
+**Architecture Philosophy**: 
+Keep client as thin as possible - just audio capture and streaming. All intelligence (VAD, RNNoise, transcription, calibration analysis) lives server-side. This supports future ultra-lightweight clients (embedded devices, mobile, etc.).
+
+**Trade-off**: 
+Requires server to be running during calibration, but this is acceptable since server must be running for normal operation anyway.
+**Files**: client/internal/calibrate/, server/internal/api/, server/internal/transcription/vad.go
+---
+
+### [15:38] [api] VAD Calibration API - Single Stateless Request
+**Details**: **Decision**: VAD calibration will use a SINGLE stateless API request, not two separate requests with server-side state.
+
+**API Design**:
+```
+POST /api/v1/calibrate
+{
+  "background_audio": [...],  // 5s of background noise PCM data
+  "speech_audio": [...]       // 5s of speech PCM data
+}
+
+Response:
+{
+  "background_stats": {
+    "min": 12, "max": 89, "avg": 45, "p95": 78
+  },
+  "speech_stats": {
+    "min": 234, "max": 1823, "avg": 654, "p5": 290
+  },
+  "recommended_threshold": 150
+}
+```
+
+**Why Single Request**:
+1. Server remains stateless (no session management)
+2. Simpler API design
+3. Client orchestrates the UX (progress bars, timing)
+4. Server just does pure calculation
+5. More RESTful/functional approach
+
+**Client Workflow**:
+1. Show "Recording background..." with progress bar (5s)
+2. Show "Recording speech..." with progress bar (5s)
+3. Send BOTH samples to server in one request
+4. Display results and offer to save
+
+**Trade-off**: Client holds both audio samples in memory (~10 seconds = ~320KB at 16kHz), but this is negligible for modern systems.
+**Files**: server/internal/api/, client/internal/calibrate/
+---
+
+### [15:45] [workflow] VAD Calibration Wizard - Complete Implementation
+**Details**: **Implementation Complete**: VAD calibration wizard using server-side energy calculation.
+
+**How It Works**:
+1. Client captures 5 seconds of background noise
+2. Client captures 5 seconds of speech
+3. Client sends both samples to server `/api/v1/analyze-audio` endpoint (called twice)
+4. Server calculates energy statistics using same VAD algorithm as production
+5. Client calculates recommended threshold: `(background_p95 + speech_p5) / 2`
+6. Client displays visual comparison and offers to save
+
+**Usage**:
+```bash
+./client --calibrate                    # Interactive mode
+./client --calibrate --yes              # Auto-save mode
+./client --calibrate --config=path.yaml # Custom config
+```
+
+**Server API**:
+- Endpoint: `POST /api/v1/analyze-audio`
+- Request: `{"audio": [byte array of PCM int16]}`
+- Response: `{"min": float, "max": float, "avg": float, "p5": float, "p95": float, "sample_count": int}`
+- Uses 10ms frames (160 samples at 16kHz) matching VAD implementation
+- Calculates RMS energy per frame, returns statistics
+
+**Client Components**:
+- `client/internal/calibrate/calibrate.go` - Main wizard logic with terminal UI
+- Flag handling in `client/cmd/client/main.go`
+- Uses existing audio capture infrastructure
+- HTTP client for server API calls
+
+**Features**:
+- Progress bars during recording
+- Visual bar chart comparison
+- Interactive save confirmation
+- Auto-save mode with `--yes` flag
+- Reuses exact same energy calculation as production VAD
+
+**TODO (deferred)**:
+- Automatic config file update (currently shows manual instructions)
+- Could be implemented with YAML parser in future
+
+**Architecture Win**:
+Keeps client lightweight by delegating all energy calculation to server. Client just captures audio and displays results.
+**Files**: server/internal/api/server.go, client/internal/calibrate/calibrate.go, client/cmd/client/main.go
+---
+
