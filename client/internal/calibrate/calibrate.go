@@ -67,42 +67,46 @@ func (w *Wizard) Run(configPath string, autoSave bool) error {
 	defer capturer.Close()
 
 	// Step 1: Record background noise
-	fmt.Println("Step 1/3: Recording background noise (5 seconds)...")
+	fmt.Println("Step 1/3: Background Noise Recording")
 	fmt.Println("  Be quiet and don't speak.")
-	fmt.Println()
+	fmt.Print("  Press Enter when ready...")
+	fmt.Scanln()
 
+	fmt.Println("  Recording for 5 seconds...")
 	backgroundAudio, err := w.recordAudio(5 * time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to record background: %w", err)
 	}
 
 	// Analyze background
+	w.log.Info("Analyzing background noise...")
 	backgroundStats, err := w.analyzeAudio(backgroundAudio)
 	if err != nil {
 		return fmt.Errorf("failed to analyze background: %w", err)
 	}
 
-	fmt.Printf("\n  ✓ Background noise level: %.0f (min: %.0f, max: %.0f)\n\n",
-		backgroundStats.Avg, backgroundStats.Min, backgroundStats.Max)
+	fmt.Printf("  ✓ Done\n\n")
 
 	// Step 2: Record speech
-	fmt.Println("Step 2/3: Recording your speech (5 seconds)...")
+	fmt.Println("Step 2/3: Speech Recording")
 	fmt.Println("  Speak normally into the microphone.")
-	fmt.Println()
+	fmt.Print("  Press Enter when ready...")
+	fmt.Scanln()
 
+	fmt.Println("  Recording for 5 seconds...")
 	speechAudio, err := w.recordAudio(5 * time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to record speech: %w", err)
 	}
 
 	// Analyze speech
+	w.log.Info("Analyzing speech...")
 	speechStats, err := w.analyzeAudio(speechAudio)
 	if err != nil {
 		return fmt.Errorf("failed to analyze speech: %w", err)
 	}
 
-	fmt.Printf("\n  ✓ Speech level: %.0f (min: %.0f, max: %.0f)\n\n",
-		speechStats.Avg, speechStats.Min, speechStats.Max)
+	fmt.Printf("  ✓ Done\n\n")
 
 	// Step 3: Calculate recommendation
 	fmt.Println("Step 3/3: Analysis")
@@ -147,47 +151,17 @@ func (w *Wizard) recordAudio(duration time.Duration) ([]byte, error) {
 	defer w.capturer.Stop()
 
 	var allAudio []byte
-	startTime := time.Now()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	endTime := time.Now().Add(duration)
 
-	// Progress bar
-	progressWidth := 20
-	fmt.Print("  ")
-
-	for {
-		elapsed := time.Since(startTime)
-		if elapsed >= duration {
-			break
-		}
-
-		// Update progress bar
-		percent := int((float64(elapsed) / float64(duration)) * 100)
-		filled := (percent * progressWidth) / 100
-		fmt.Print("\r  ")
-		for i := 0; i < progressWidth; i++ {
-			if i < filled {
-				fmt.Print("█")
-			} else {
-				fmt.Print("░")
-			}
-		}
-		fmt.Printf(" %d%%", percent)
-
-		// Collect audio chunks
+	// Collect audio until duration expires
+	for time.Now().Before(endTime) {
 		select {
 		case chunk := <-w.capturer.Chunks():
 			allAudio = append(allAudio, chunk.Data...)
-		case <-ticker.C:
+		case <-time.After(100 * time.Millisecond):
+			// Continue waiting
 		}
 	}
-
-	// Final progress
-	fmt.Print("\r  ")
-	for i := 0; i < progressWidth; i++ {
-		fmt.Print("█")
-	}
-	fmt.Println(" 100%")
 
 	// Drain remaining chunks
 	for {
@@ -244,16 +218,26 @@ func (w *Wizard) updateConfig(configPath string, threshold float64) error {
 
 // visualizeComparison shows a visual comparison of background vs speech energy
 func visualizeComparison(background, speech *AudioStatistics) {
-	maxVal := max(background.Max, speech.Max) * 1.1
+	fmt.Println("  Background Noise:")
+	fmt.Printf("    Min: %.1f  |  Avg: %.1f  |  Max: %.1f  |  P95: %.1f\n",
+		background.Min, background.Avg, background.Max, background.P95)
+
+	fmt.Println("\n  Speech:")
+	fmt.Printf("    Min: %.1f  |  Avg: %.1f  |  Max: %.1f  |  P5: %.1f\n",
+		speech.Min, speech.Avg, speech.Max, speech.P5)
+
+	// Show visual comparison using averages
+	maxVal := max(background.Avg, speech.Avg) * 1.2
 	if maxVal == 0 {
 		maxVal = 1
 	}
 
-	bgBar := int((background.Avg / maxVal) * 20)
-	speechBar := int((speech.Avg / maxVal) * 20)
+	bgBar := int((background.Avg / maxVal) * 30)
+	speechBar := int((speech.Avg / maxVal) * 30)
 
-	fmt.Println("  Background: " + visualBar(bgBar, 20) + fmt.Sprintf(" %.0f", background.Avg))
-	fmt.Println("  Speech:     " + visualBar(speechBar, 20) + fmt.Sprintf(" %.0f", speech.Avg))
+	fmt.Println("\n  Visual Comparison (Average Energy):")
+	fmt.Println("    Background: " + visualBar(bgBar, 30))
+	fmt.Println("    Speech:     " + visualBar(speechBar, 30))
 }
 
 // visualBar creates a visual bar chart

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"time"
 
@@ -426,5 +427,8 @@ func calculateFrameEnergy(samples []int16) float64 {
 		sumSquares += val * val
 	}
 
-	return sumSquares / float64(len(samples))
+	// IMPORTANT: Take square root for RMS (Root Mean Square)
+	// This matches vad.go:calculateEnergy() exactly
+	rms := math.Sqrt(sumSquares / float64(len(samples)))
+	return rms
 }
