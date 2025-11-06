@@ -144,6 +144,20 @@ fi
 echo "✅ Build complete!"
 echo ""
 
+# Always create config directory and copy configs if they don't exist
+CONFIG_DIR="$HOME/.config/richardtate"
+mkdir -p "$CONFIG_DIR"
+
+if [ ! -f "$CONFIG_DIR/server.yaml" ]; then
+    cp "$PROJECT_ROOT/server/config.example.yaml" "$CONFIG_DIR/server.yaml"
+    echo "✅ Created server config at $CONFIG_DIR/server.yaml"
+fi
+if [ ! -f "$CONFIG_DIR/client.yaml" ]; then
+    cp "$PROJECT_ROOT/client/config.example.yaml" "$CONFIG_DIR/client.yaml"
+    echo "✅ Created client config at $CONFIG_DIR/client.yaml"
+fi
+echo ""
+
 # Ask about daemon setup
 echo "Would you like to set up background daemon services?"
 echo "This will:"
@@ -157,21 +171,9 @@ echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo "🔨 Setting up daemon services..."
 
-    # Create config and logs directories
-    CONFIG_DIR="$HOME/.config/richardtate"
+    # Create logs directory
     LOGS_DIR="$CONFIG_DIR/logs"
-    mkdir -p "$CONFIG_DIR"
     mkdir -p "$LOGS_DIR"
-
-    # Copy config files if they don't exist
-    if [ ! -f "$CONFIG_DIR/server.yaml" ]; then
-        cp "$PROJECT_ROOT/server/config.example.yaml" "$CONFIG_DIR/server.yaml"
-        echo "✅ Created server config at $CONFIG_DIR/server.yaml"
-    fi
-    if [ ! -f "$CONFIG_DIR/client.yaml" ]; then
-        cp "$PROJECT_ROOT/client/config.example.yaml" "$CONFIG_DIR/client.yaml"
-        echo "✅ Created client config at $CONFIG_DIR/client.yaml"
-    fi
 
     # Install launchd plists
     PLIST_DIR="$HOME/Library/LaunchAgents"
@@ -193,12 +195,32 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo ""
     echo "🎉 Daemon services configured!"
     echo ""
-    echo "Next steps:"
-    echo "  1. Calibrate VAD: cd $PROJECT_ROOT/client && ./client --calibrate"
-    echo "  2. Start services: richardtate start"
-    echo "  3. Check status:   richardtate status"
-    echo "  4. View logs:      richardtate logs"
-    echo ""
+
+    # Check if services are already running
+    if launchctl list | grep -q "com.richardtate.server" || launchctl list | grep -q "com.richardtate.client"; then
+        echo "⚠️  Services are currently running with old binaries."
+        echo ""
+        read -p "Restart services to use new binaries? (Y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            launchctl unload "$PLIST_DIR/com.richardtate.server.plist" 2>/dev/null || true
+            launchctl unload "$PLIST_DIR/com.richardtate.client.plist" 2>/dev/null || true
+            sleep 1
+            launchctl load "$PLIST_DIR/com.richardtate.server.plist" 2>/dev/null || true
+            launchctl load "$PLIST_DIR/com.richardtate.client.plist" 2>/dev/null || true
+            echo "✅ Services restarted with new binaries"
+        else
+            echo "Remember to restart: richardtate restart"
+        fi
+        echo ""
+    else
+        echo "Next steps:"
+        echo "  1. Calibrate VAD: cd $PROJECT_ROOT/client && ./client --calibrate"
+        echo "  2. Start services: richardtate start"
+        echo "  3. Check status:   richardtate status"
+        echo "  4. View logs:      richardtate logs"
+        echo ""
+    fi
 else
     echo ""
     echo "To run manually:"
