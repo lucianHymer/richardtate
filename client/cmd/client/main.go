@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -184,20 +186,25 @@ func main() {
 // handleDataChannelMessage handles messages received from the server
 func handleDataChannelMessage(msg *protocol.Message) {
 	// This will be called when we receive messages from the server
-	// For now, just log them
 	switch msg.Type {
 	case protocol.MessageTypeControlPong:
 		println("✓ Received pong from server!")
 
 	case protocol.MessageTypeTranscriptPartial:
 		var transcript protocol.TranscriptData
-		// TODO: Unmarshal and display partial transcription
-		_ = transcript
+		if err := json.Unmarshal(msg.Data, &transcript); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to unmarshal partial transcript: %v\n", err)
+			return
+		}
+		fmt.Printf("📝 [partial] %s\n", transcript.Text)
 
 	case protocol.MessageTypeTranscriptFinal:
 		var transcript protocol.TranscriptData
-		// TODO: Unmarshal and display final transcription
-		_ = transcript
+		if err := json.Unmarshal(msg.Data, &transcript); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to unmarshal final transcript: %v\n", err)
+			return
+		}
+		fmt.Printf("✅ %s\n", transcript.Text)
 
 	default:
 		println("Received message type:", string(msg.Type))
