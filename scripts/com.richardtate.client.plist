@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>PROJECT_ROOT/client/client</string>
+        <string>PROJECT_ROOT/client/cmd/client/client</string>
         <string>--config</string>
         <string>HOME/.config/richardtate/client.yaml</string>
     </array>
