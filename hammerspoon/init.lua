@@ -1,6 +1,18 @@
 -- Streaming Transcription Hammerspoon Integration
 -- Simple hotkey-triggered voice transcription with direct text insertion
 
+-- Load required extensions
+local websocket = require("hs.websocket")
+local http = require("hs.http")
+local hotkey = require("hs.hotkey")
+local canvas = require("hs.canvas")
+local screen = require("hs.screen")
+local eventtap = require("hs.eventtap")
+local json = require("hs.json")
+local timer = require("hs.timer")
+local notify = require("hs.notify")
+local hs = require("hs")
+
 -- Configuration
 local config = {
     daemonURL = "http://localhost:8081",
@@ -18,7 +30,7 @@ local state = {
 -- HTTP helper
 local function httpRequest(method, path, callback)
     local url = config.daemonURL .. path
-    hs.http.asyncRequest(url, method, nil, nil, function(status, body, headers)
+    http.asyncRequest(url, method, nil, nil, function(status, body, headers)
         if callback then
             callback(status, body)
         end
@@ -27,8 +39,8 @@ end
 
 -- Indicator UI (minimal floating window)
 local function createIndicator()
-    local screen = hs.screen.mainScreen()
-    local frame = screen:frame()
+    local mainScreen = screen.mainScreen()
+    local frame = mainScreen:frame()
 
     -- Position: top-right corner with 20px margin
     local width = 200
@@ -36,10 +48,10 @@ local function createIndicator()
     local x = frame.x + frame.w - width - 20
     local y = frame.y + 20
 
-    local canvas = hs.canvas.new({x = x, y = y, w = width, h = height})
+    local canvasObj = canvas.new({x = x, y = y, w = width, h = height})
 
     -- Background (semi-transparent dark)
-    canvas:appendElements({
+    canvasObj:appendElements({
         type = "rectangle",
         action = "fill",
         fillColor = {red = 0.1, green = 0.1, blue = 0.1, alpha = 0.9},
@@ -47,7 +59,7 @@ local function createIndicator()
     })
 
     -- Red recording dot
-    canvas:appendElements({
+    canvasObj:appendElements({
         type = "circle",
         action = "fill",
         fillColor = {red = 1.0, green = 0.0, blue = 0.0, alpha = 1.0},
@@ -56,7 +68,7 @@ local function createIndicator()
     })
 
     -- Text: "Recording..."
-    canvas:appendElements({
+    canvasObj:appendElements({
         type = "text",
         text = "Recording...",
         textColor = {red = 1.0, green = 1.0, blue = 1.0, alpha = 1.0},
@@ -65,7 +77,7 @@ local function createIndicator()
         frame = {x = 35, y = 10, w = 150, h = 20},
     })
 
-    return canvas
+    return canvasObj
 end
 
 local function showIndicator()
@@ -89,12 +101,12 @@ local function connectWebSocket()
         state.ws:close()
     end
 
-    state.ws = hs.websocket.new(config.wsURL, function(event, message)
+    state.ws = websocket.new(config.wsURL, function(event, message)
         if event == "message" then
-            local success, data = pcall(hs.json.decode, message)
+            local success, data = pcall(json.decode, message)
             if success and data.chunk then
                 -- Insert text directly at cursor position!
-                hs.eventtap.keyStrokes(data.chunk)
+                eventtap.keyStrokes(data.chunk)
             elseif success and data.final then
                 -- Recording complete (optional: could show notification)
                 print("Transcription complete: " .. (data.full_text or ""))
@@ -158,7 +170,7 @@ local function stopRecording()
     end)
 
     -- Disconnect WebSocket (give it a moment for final chunks)
-    hs.timer.doAfter(1.0, function()
+    timer.doAfter(1.0, function()
         disconnectWebSocket()
         state.recording = false
     end)
@@ -174,10 +186,10 @@ local function toggleRecording()
 end
 
 -- Bind hotkey
-hs.hotkey.bind(config.hotkey.mods, config.hotkey.key, toggleRecording)
+hotkey.bind(config.hotkey.mods, config.hotkey.key, toggleRecording)
 
 -- Cleanup on reload
-hs.hotkey.bind({"cmd", "alt", "ctrl"}, "r", function()
+hotkey.bind({"cmd", "alt", "ctrl"}, "r", function()
     if state.recording then
         stopRecording()
     end
@@ -185,7 +197,7 @@ hs.hotkey.bind({"cmd", "alt", "ctrl"}, "r", function()
 end)
 
 -- Notification on load
-hs.notify.new({
+notify.new({
     title = "Streaming Transcription",
     informativeText = "Press Ctrl+N to start/stop recording"
 }):send()
