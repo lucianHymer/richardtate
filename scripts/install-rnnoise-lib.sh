@@ -4,7 +4,8 @@ set -e
 echo "Installing RNNoise library..."
 
 # Install directory
-INSTALL_DIR="/workspace/project/deps/rnnoise"
+#INSTALL_DIR="/workspace/project/deps/rnnoise"
+INSTALL_DIR="/Users/lucian/projects/richardtate/deps/rnnoise"
 mkdir -p "$INSTALL_DIR"
 
 # Check if already installed

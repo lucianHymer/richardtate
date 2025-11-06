@@ -45,3 +45,4 @@ deps/
 dist/
 build/
 server/config.yaml
+client/config.yaml
