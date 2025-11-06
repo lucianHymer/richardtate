@@ -1510,6 +1510,18 @@ client/
 - ✅ Client builds without issues
 - ✅ Help message shows new flags correctly
 
+**Bug Fix (Same Session)**:
+- 🐛 **CRITICAL**: Initial implementation forgot `math.Sqrt()` in energy calculation
+  - Server was returning mean square (8k-25k range) instead of RMS (100-500 range)
+  - Fixed: Added `math.Sqrt(sumSquares / sampleCount)` to match VAD exactly
+  - File: `server/internal/api/server.go:432`
+
+**UX Improvements (Same Session)**:
+- Added "Press Enter when ready" prompts before recordings
+- Removed noisy progress bars
+- Better statistics display with all metrics visible
+- Cleaner output flow
+
 ---
 
 #### **5. 🚨 THINGS TOMORROW'S TEAM MUST KNOW**
@@ -1542,9 +1554,10 @@ client/
 
 5. **Energy Calculation Matches VAD Exactly**
    - Frame size: 160 samples (10ms at 16kHz)
-   - Formula: RMS energy = `sqrt(sumSquares / sampleCount)`
+   - Formula: RMS energy = `math.Sqrt(sumSquares / sampleCount)`
    - Server API uses same code pattern as `vad.go:calculateEnergy()`
    - This guarantees calibration accuracy
+   - **CRITICAL**: Must include `math.Sqrt()` - initial version forgot this!
 
 **Testing Notes**:
 
