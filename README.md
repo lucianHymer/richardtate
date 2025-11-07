@@ -14,6 +14,16 @@
 
 Real-time voice-to-text transcription that streams your spoken words directly into any application. Press a hotkey, speak naturally, and watch your words appear at your cursor with near-realtime feedback.
 
+## Design Philosophy
+
+**Ultra-Lightweight Client Architecture**
+
+The client only handles audio capture and WebRTC DataChannel streaming—everything else (ML models, noise suppression, VAD) runs server-side. This means:
+
+- **Extremely portable**: Could theoretically run on an ESP32 or other microcontroller
+- **Network resilient**: WebRTC DataChannels provide reliable, ordered delivery with built-in reconnection (exponential backoff + 20-second audio buffering)
+- **Simple to implement**: New clients just need WebRTC + audio streaming (~200 lines)
+
 ## Architecture
 
 Richardtate is a three-component system that processes your voice locally with state-of-the-art ML models:
