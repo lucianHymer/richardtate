@@ -59,3 +59,36 @@
 **Files**: client/internal/config/config.go
 ---
 
+### [15:55] [gotcha] Short utterances not transcribed - Speech density solution
+**Details**: Problem: Short utterances like "yeah", "sure", "okay" were not being transcribed because they contained less than 1 second of actual speech. The 1-second minimum was implemented to prevent Whisper hallucinations on noise-only chunks.
+
+Solution: Added speech density check - if a chunk has >= 60% speech density (speech time / total time), it will be sent to Whisper even if it has less than 1 second of speech. This allows legitimate short utterances through while still filtering out sparse noise chunks that cause hallucinations.
+
+Implementation: Modified chunker.go checkAndChunk() and Flush() functions to calculate speech density and use dual criteria:
+1. Original: >= 1 second of speech
+2. New: Any amount of speech with >= 60% density
+
+This balances hallucination prevention with responsiveness for short conversational responses.
+**Files**: server/internal/transcription/chunker.go
+---
+
+### [16:14] [config] Speech density threshold is now configurable
+**Details**: The speech density threshold for transcribing short utterances is now configurable via client config:
+
+transcription.vad.speech_density_threshold (default: 0.6 = 60%)
+
+This threshold determines when chunks with less than 1 second of speech should still be transcribed based on their speech density (speech time / total time). This allows short utterances like "yeah", "sure", "okay" to be captured while still filtering out sparse noise chunks that cause hallucinations.
+
+The setting is:
+1. Configured in client config YAML
+2. Sent to server in control.start message  
+3. Passed through pipeline config to chunker
+4. Used in both checkAndChunk() and Flush() methods
+
+Users can tune this value:
+- Higher (0.7-0.9): More conservative, fewer false positives
+- Lower (0.4-0.5): More aggressive, catches quieter/briefer utterances
+- Default 0.6: Good balance for most use cases
+**Files**: client/internal/config/config.go, shared/protocol/messages.go, server/internal/transcription/chunker.go, server/internal/transcription/pipeline.go, client/config.example.yaml
+---
+

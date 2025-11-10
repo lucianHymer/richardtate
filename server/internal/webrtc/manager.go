@@ -76,6 +76,7 @@ func (m *Manager) CreatePipelineForPeer(peerID string, settings *protocol.Contro
 		SilenceThreshold:   time.Duration(settings.SilenceThresholdMs) * time.Millisecond,
 		MinChunkDuration:   time.Duration(settings.MinChunkDurationMs) * time.Millisecond,
 		MaxChunkDuration:   time.Duration(settings.MaxChunkDurationMs) * time.Millisecond,
+		SpeechDensityThreshold: settings.SpeechDensityThreshold,
 		EnableDebugWAV:     m.enableDebugWAV,
 	}
 

@@ -14,6 +14,7 @@ type SmartChunkerConfig struct {
 	MinChunkDuration   time.Duration // Minimum chunk duration (avoid tiny chunks)
 	MaxChunkDuration   time.Duration // Maximum chunk duration (safety limit)
 	VADEnergyThreshold float64       // Energy threshold for VAD
+	SpeechDensityThreshold float64   // Speech density threshold for short utterances
 	ChunkReadyCallback func([]int16) // Called when chunk is ready for transcription
 	Logger             *logger.Logger
 }
@@ -47,6 +48,9 @@ func NewSmartChunker(config SmartChunkerConfig) *SmartChunker {
 	}
 	if config.VADEnergyThreshold == 0 {
 		config.VADEnergyThreshold = 100.0
+	}
+	if config.SpeechDensityThreshold == 0 {
+		config.SpeechDensityThreshold = 0.6 // Default 60% density for short utterances
 	}
 
 	// Create VAD
@@ -113,12 +117,27 @@ func (c *SmartChunker) checkAndChunk() {
 		return
 	}
 
-	// Check if VAD detected sufficient silence AND we have enough audio AND enough actual speech
-	// This prevents sending chunks that are mostly silence/noise to Whisper (reduces hallucinations)
-	minSpeechDuration := 1 * time.Second // Require at least 1 second of actual speech
+	// Check if VAD detected sufficient silence AND we have enough audio
+	// Two paths to approve a chunk for transcription:
+	// 1. Has at least 1 second of actual speech (original check)
+	// 2. Has < 1 second of speech BUT speech density >= threshold (for short utterances like "yeah", "sure")
+	minSpeechDuration := 1 * time.Second
+
+	// Calculate speech density using buffer duration as total duration
+	speechDensity := float64(0)
+	if bufferDuration > 0 {
+		speechDensity = vadStats.SpeechDuration.Seconds() / bufferDuration.Seconds()
+	}
+
+	// Check if we should send this chunk to Whisper
+	hasSufficientSpeech := vadStats.SpeechDuration >= minSpeechDuration ||
+		(vadStats.SpeechDuration > 0 && speechDensity >= c.config.SpeechDensityThreshold)
+
 	if shouldChunk &&
 	   bufferDuration >= c.config.MinChunkDuration &&
-	   vadStats.SpeechDuration >= minSpeechDuration {
+	   hasSufficientSpeech {
+		c.log.Debug("Chunking: speech=%.2fs, density=%.1f%%, buffer=%.2fs",
+			vadStats.SpeechDuration.Seconds(), speechDensity*100, bufferDuration.Seconds())
 		c.flushChunk()
 		return
 	}
@@ -159,7 +178,7 @@ func (c *SmartChunker) Flush() {
 
 	// Check if we have sufficient speech content to transcribe
 	vadStats := c.vad.Stats()
-	minSpeechDuration := 1 * time.Second // Same threshold as regular chunks
+	minSpeechDuration := 1 * time.Second
 	bufferDuration := c.getBufferDuration()
 
 	if len(c.buffer) == 0 {
@@ -167,14 +186,25 @@ func (c *SmartChunker) Flush() {
 		return
 	}
 
-	// Only flush if we have enough actual speech
-	// This prevents hallucinations on trailing silence/noise
-	if vadStats.SpeechDuration >= minSpeechDuration {
-		c.log.Debug("Flushing final chunk with %.2fs of speech", vadStats.SpeechDuration.Seconds())
+	// Calculate speech density using buffer duration as total duration
+	speechDensity := float64(0)
+	if bufferDuration > 0 {
+		speechDensity = vadStats.SpeechDuration.Seconds() / bufferDuration.Seconds()
+	}
+
+	// Two paths to approve for transcription:
+	// 1. Has at least 1 second of actual speech (original check)
+	// 2. Has < 1 second of speech BUT speech density >= threshold (for short utterances)
+	hasSufficientSpeech := vadStats.SpeechDuration >= minSpeechDuration ||
+		(vadStats.SpeechDuration > 0 && speechDensity >= c.config.SpeechDensityThreshold)
+
+	if hasSufficientSpeech {
+		c.log.Debug("Flushing final chunk: speech=%.2fs, density=%.1f%%, buffer=%.2fs",
+			vadStats.SpeechDuration.Seconds(), speechDensity*100, bufferDuration.Seconds())
 		c.flushChunk()
 	} else {
-		c.log.Debug("Discarding final chunk: insufficient speech (%.2fs speech in %.2fs buffer)",
-			vadStats.SpeechDuration.Seconds(), bufferDuration.Seconds())
+		c.log.Debug("Discarding final chunk: insufficient speech (%.2fs speech @ %.1f%% density in %.2fs buffer)",
+			vadStats.SpeechDuration.Seconds(), speechDensity*100, bufferDuration.Seconds())
 		// Clear buffer without transcribing
 		c.buffer = c.buffer[:0]
 		c.vad.Reset()

@@ -227,11 +227,12 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 				s.logger.Error("Failed to parse control start data: %v", err)
 				return
 			}
-			s.logger.Info("Client settings: VAD=%.0f, Silence=%dms, Min=%dms, Max=%dms",
+			s.logger.Info("Client settings: VAD=%.0f, Silence=%dms, Min=%dms, Max=%dms, Density=%.1f%%",
 				controlData.VADEnergyThreshold,
 				controlData.SilenceThresholdMs,
 				controlData.MinChunkDurationMs,
-				controlData.MaxChunkDurationMs)
+				controlData.MaxChunkDurationMs,
+				controlData.SpeechDensityThreshold*100)
 		} else {
 			s.logger.Warn("No settings provided in control.start, using defaults")
 			// Use default values if not provided
@@ -240,6 +241,7 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 				SilenceThresholdMs: 1000,
 				MinChunkDurationMs: 500,
 				MaxChunkDurationMs: 30000,
+				SpeechDensityThreshold: 0.6,
 			}
 		}
 

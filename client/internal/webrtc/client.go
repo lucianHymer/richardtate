@@ -377,6 +377,7 @@ func (c *Client) SendControlStart() error {
 		SilenceThresholdMs: c.config.Transcription.VAD.SilenceThresholdMs,
 		MinChunkDurationMs: c.config.Transcription.VAD.MinChunkDurationMs,
 		MaxChunkDurationMs: c.config.Transcription.VAD.MaxChunkDurationMs,
+		SpeechDensityThreshold: c.config.Transcription.VAD.SpeechDensityThreshold,
 	}
 
 	// Marshal to JSON

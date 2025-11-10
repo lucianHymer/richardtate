@@ -38,6 +38,7 @@ type PipelineConfig struct {
 	MinChunkDuration   time.Duration // Minimum chunk duration
 	MaxChunkDuration   time.Duration // Maximum chunk duration
 	VADEnergyThreshold float64       // VAD energy threshold
+	SpeechDensityThreshold float64   // Speech density threshold for short utterances
 	ResultChannelSize  int           // Size of result channel buffer
 	EnableDebugWAV     bool          // Save WAV files for debugging
 }
@@ -82,6 +83,7 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		MinChunkDuration:   config.MinChunkDuration,
 		MaxChunkDuration:   config.MaxChunkDuration,
 		VADEnergyThreshold: config.VADEnergyThreshold,
+		SpeechDensityThreshold: config.SpeechDensityThreshold,
 		ChunkReadyCallback: pipeline.transcribeChunk,
 		Logger:             config.WhisperConfig.Logger,
 	})

@@ -44,3 +44,8 @@ transcription:
 
     # Maximum chunk duration to prevent runaway recording (milliseconds)
     max_chunk_duration_ms: 30000
+
+    # Speech density threshold for short utterances (0.0-1.0, default 0.6)
+    # Chunks with less than 1 second of speech but >= this density will be transcribed
+    # This allows short utterances like "yeah" or "sure" to be captured
+    speech_density_threshold: 0.6

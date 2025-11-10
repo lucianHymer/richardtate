@@ -26,10 +26,11 @@ type Config struct {
 
 	Transcription struct {
 		VAD struct {
-			EnergyThreshold    float64 `yaml:"energy_threshold"`
-			SilenceThresholdMs int     `yaml:"silence_threshold_ms"`
-			MinChunkDurationMs int     `yaml:"min_chunk_duration_ms"`
-			MaxChunkDurationMs int     `yaml:"max_chunk_duration_ms"`
+			EnergyThreshold      float64 `yaml:"energy_threshold"`
+			SilenceThresholdMs   int     `yaml:"silence_threshold_ms"`
+			MinChunkDurationMs   int     `yaml:"min_chunk_duration_ms"`
+			MaxChunkDurationMs   int     `yaml:"max_chunk_duration_ms"`
+			SpeechDensityThreshold float64 `yaml:"speech_density_threshold"`
 		} `yaml:"vad"`
 	} `yaml:"transcription"`
 
@@ -79,6 +80,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Transcription.VAD.MaxChunkDurationMs == 0 {
 		cfg.Transcription.VAD.MaxChunkDurationMs = 30000 // 30 seconds
 	}
+	if cfg.Transcription.VAD.SpeechDensityThreshold == 0 {
+		cfg.Transcription.VAD.SpeechDensityThreshold = 0.6 // 60% speech density for short utterances
+	}
 
 	return &cfg, nil
 }
@@ -120,5 +124,6 @@ func Default() *Config {
 	cfg.Transcription.VAD.SilenceThresholdMs = 1000
 	cfg.Transcription.VAD.MinChunkDurationMs = 500
 	cfg.Transcription.VAD.MaxChunkDurationMs = 30000
+	cfg.Transcription.VAD.SpeechDensityThreshold = 0.6
 	return cfg
 }

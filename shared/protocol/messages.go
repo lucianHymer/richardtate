@@ -37,6 +37,7 @@ type ControlStartData struct {
 	SilenceThresholdMs int     `json:"silence_threshold_ms"`
 	MinChunkDurationMs int     `json:"min_chunk_duration_ms"`
 	MaxChunkDurationMs int     `json:"max_chunk_duration_ms"`
+	SpeechDensityThreshold float64 `json:"speech_density_threshold"`
 }
 
 // AudioChunkData contains raw PCM audio data
