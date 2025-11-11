@@ -10,6 +10,7 @@ System design, component relationships, and structural decisions.
 @architecture/transcription-pipeline.md
 @architecture/per-client-pipeline.md
 @architecture/vad-calibration-api.md
+@architecture/config-hot-reload.md
 @architecture/logging-system.md
 @architecture/debug-log-system.md
 @architecture/hammerspoon-integration.md
@@ -19,6 +20,7 @@ System design, component relationships, and structural decisions.
 External services, libraries, and third-party integrations.
 
 @dependencies/whisper-and-rnnoise-setup.md
+@dependencies/whisper-initial-prompt.md
 
 ## Patterns
 

@@ -242,3 +242,72 @@ Raw Audio → RNNoise (if available) → VAD energy calculation
 **Files**: hammerspoon/init.lua, streaming-transcription-implementation-plan.md
 
 ---
+
+## Calibration Saved to Wrong Config Path
+
+**Discovered**: 2025-11-06 (Session 16)
+
+**Problem**: API calibration endpoint was saving threshold to wrong YAML path:
+- Saving to: `transcription.vad_energy_threshold` (flat, wrong)
+- Should be: `transcription.vad.energy_threshold` (nested, correct)
+
+**Impact**:
+- Calibration appeared to succeed but threshold wasn't actually used
+- Client code reads from nested structure only
+- CLI calibration had correct implementation, API calibration had wrong path
+
+**Root Cause**: Code duplication between CLI calibration and API calibration endpoints
+
+**Solution**:
+1. Created shared `config.UpdateVADThreshold()` function in `client/internal/config/update.go`
+2. Both CLI calibration and API calibration now use same function
+3. Ensures consistency and prevents future divergence
+
+**Lesson**: When two code paths do the same thing, extract to shared function immediately
+
+**Files**: client/internal/config/update.go, client/internal/api/server.go, client/internal/calibrate/calibrate.go
+
+---
+
+## Default Debug Log Path Was Read-Only Filesystem Issue
+
+**Discovered**: 2025-11-06 (Session 16)
+
+**Problem**: The client config default for debug_log_path was set to "./debug.log" (current directory) on lines 60 and 116 of config.go. When client ran in a read-only filesystem, it would FATAL on startup.
+
+**Solution**: Fixed to use "~/.config/richardtate/debug.log" to match config.example.yaml default. The debuglog package already handles ~ expansion correctly.
+
+**Impact**: Client can now run from read-only filesystems without fatal errors on startup.
+
+**Files**: client/internal/config/config.go
+
+---
+
+## Short Utterances Not Transcribed - Speech Density Solution
+
+**Discovered**: 2025-11-06 (Session 16)
+
+**Problem**: Short utterances like "yeah", "sure", "okay" were not being transcribed because they contained less than 1 second of actual speech. The 1-second minimum was implemented to prevent Whisper hallucinations on noise-only chunks.
+
+**Solution**: Added speech density check - if a chunk has >= 60% speech density (speech time / total time), it will be sent to Whisper even if it has less than 1 second of speech. This allows legitimate short utterances through while still filtering out sparse noise chunks that cause hallucinations.
+
+**Implementation**: Modified chunker.go checkAndChunk() and Flush() functions to calculate speech density and use dual criteria:
+1. Original: >= 1 second of speech
+2. New: Any amount of speech with >= 60% density (configurable)
+
+**Configuration**: The speech density threshold is now configurable via client config:
+- `transcription.vad.speech_density_threshold` (default: 0.6 = 60%)
+- Configured in client config YAML
+- Sent to server in control.start message
+- Passed through pipeline config to chunker
+
+**Tuning Guide**:
+- Higher (0.7-0.9): More conservative, fewer false positives
+- Lower (0.4-0.5): More aggressive, catches quieter/briefer utterances
+- Default 0.6: Good balance for most use cases
+
+**Why This Works**: Balances hallucination prevention with responsiveness for short conversational responses.
+
+**Files**: server/internal/transcription/chunker.go, client/internal/config/config.go, shared/protocol/messages.go, server/internal/transcription/pipeline.go, client/config.example.yaml
+
+---
