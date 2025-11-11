@@ -59,9 +59,15 @@ func NewWhisperTranscriber(config WhisperConfig) (*WhisperTranscriber, error) {
 	// Set token timestamps for more accurate segment timing
 	ctx.SetTokenTimestamps(true)
 
+	// Set initial prompt to improve transcription for technical/programming context
+	// This helps Whisper understand we're speaking commands to a computer, not having a conversation
+	initialPrompt := "Voice commands for programming. Speaking to computer assistant. Direct address. Imperative mood. Technical instructions. JavaScript, TypeScript, Go, Solidity, Python, React, Node.js. Functions, variables, classes, interfaces, smart contracts, blockchain, API endpoints, database queries. Git commands, terminal operations, code editor."
+	ctx.SetInitialPrompt(initialPrompt)
+
 	log.InfoWithFields("Context configured", map[string]interface{}{
-		"language": config.Language,
-		"threads":  config.Threads,
+		"language":       config.Language,
+		"threads":        config.Threads,
+		"initial_prompt": initialPrompt[:50] + "...", // Log first 50 chars
 	})
 
 	return &WhisperTranscriber{

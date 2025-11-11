@@ -8,6 +8,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WHISPER_DIR="$PROJECT_ROOT/deps/whisper.cpp"
 
 if [ ! -d "$WHISPER_DIR" ]; then
+    echo $WHISPER_DIR
     echo "❌ Whisper.cpp not found. Run ./scripts/install-whisper.sh first"
     return 1
 fi
