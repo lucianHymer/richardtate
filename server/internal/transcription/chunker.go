@@ -9,14 +9,14 @@ import (
 
 // SmartChunkerConfig holds configuration for VAD-based chunking
 type SmartChunkerConfig struct {
-	SampleRate         int           // Audio sample rate (16kHz)
-	SilenceThreshold   time.Duration // Duration of silence to trigger chunk (1s)
-	MinChunkDuration   time.Duration // Minimum chunk duration (avoid tiny chunks)
-	MaxChunkDuration   time.Duration // Maximum chunk duration (safety limit)
-	VADEnergyThreshold float64       // Energy threshold for VAD
-	SpeechDensityThreshold float64   // Speech density threshold for short utterances
-	ChunkReadyCallback func([]int16) // Called when chunk is ready for transcription
-	Logger             *logger.Logger
+	SampleRate             int           // Audio sample rate (16kHz)
+	SilenceThreshold       time.Duration // Duration of silence to trigger chunk (1s)
+	MinChunkDuration       time.Duration // Minimum chunk duration (avoid tiny chunks)
+	MaxChunkDuration       time.Duration // Maximum chunk duration (safety limit)
+	VADEnergyThreshold     float64       // Energy threshold for VAD
+	SpeechDensityThreshold float64       // Speech density threshold for short utterances
+	ChunkReadyCallback     func([]int16) // Called when chunk is ready for transcription
+	Logger                 *logger.Logger
 }
 
 // SmartChunker accumulates audio and chunks based on VAD silence detection
@@ -134,8 +134,8 @@ func (c *SmartChunker) checkAndChunk() {
 		(vadStats.SpeechDuration > 0 && speechDensity >= c.config.SpeechDensityThreshold)
 
 	if shouldChunk &&
-	   bufferDuration >= c.config.MinChunkDuration &&
-	   hasSufficientSpeech {
+		bufferDuration >= c.config.MinChunkDuration &&
+		hasSufficientSpeech {
 		c.log.Debug("Chunking: speech=%.2fs, density=%.1f%%, buffer=%.2fs",
 			vadStats.SpeechDuration.Seconds(), speechDensity*100, bufferDuration.Seconds())
 		c.flushChunk()

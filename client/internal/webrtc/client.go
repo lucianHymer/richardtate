@@ -7,25 +7,25 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v4"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
+	"github.com/pion/webrtc/v4"
 )
 
 // Client handles WebRTC connection to the server
 type Client struct {
-	serverURL     string
-	config        *config.Config
-	logger        *logger.ContextLogger
-	pc            *webrtc.PeerConnection
-	dataChannel   *webrtc.DataChannel
-	wsConn        *websocket.Conn
-	onMessage     func(msg *protocol.Message)
-	connected     bool
-	connectedMu   sync.RWMutex
-	sequenceID    uint64
-	sequenceIDMu  sync.Mutex
+	serverURL    string
+	config       *config.Config
+	logger       *logger.ContextLogger
+	pc           *webrtc.PeerConnection
+	dataChannel  *webrtc.DataChannel
+	wsConn       *websocket.Conn
+	onMessage    func(msg *protocol.Message)
+	connected    bool
+	connectedMu  sync.RWMutex
+	sequenceID   uint64
+	sequenceIDMu sync.Mutex
 
 	// Reconnection state
 	reconnecting         bool
@@ -36,10 +36,10 @@ type Client struct {
 	stopReconnect        chan struct{}
 
 	// Audio chunk buffering during reconnection
-	chunkBuffer     []bufferedChunk
-	chunkBufferMu   sync.Mutex
-	maxBufferSize   int
-	droppedChunks   uint64
+	chunkBuffer   []bufferedChunk
+	chunkBufferMu sync.Mutex
+	maxBufferSize int
+	droppedChunks uint64
 
 	// Connection state callback
 	onConnectionStateChange func(connected bool, reconnecting bool)
@@ -373,10 +373,10 @@ func (c *Client) SendPing() error {
 func (c *Client) SendControlStart() error {
 	// Create control start data with VAD settings from config
 	controlData := protocol.ControlStartData{
-		VADEnergyThreshold: c.config.Transcription.VAD.EnergyThreshold,
-		SilenceThresholdMs: c.config.Transcription.VAD.SilenceThresholdMs,
-		MinChunkDurationMs: c.config.Transcription.VAD.MinChunkDurationMs,
-		MaxChunkDurationMs: c.config.Transcription.VAD.MaxChunkDurationMs,
+		VADEnergyThreshold:     c.config.Transcription.VAD.EnergyThreshold,
+		SilenceThresholdMs:     c.config.Transcription.VAD.SilenceThresholdMs,
+		MinChunkDurationMs:     c.config.Transcription.VAD.MinChunkDurationMs,
+		MaxChunkDurationMs:     c.config.Transcription.VAD.MaxChunkDurationMs,
 		SpeechDensityThreshold: c.config.Transcription.VAD.SpeechDensityThreshold,
 	}
 

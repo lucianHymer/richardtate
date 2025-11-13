@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/webrtc/v4"
-	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
+	"github.com/pion/webrtc/v4"
 )
 
 // Manager handles WebRTC peer connections
@@ -20,9 +20,10 @@ type Manager struct {
 	config      webrtc.Configuration
 
 	// Factory config for creating pipelines
-	whisperConfig    transcription.WhisperConfig
-	rnnoiseModelPath string
-	enableDebugWAV   bool
+	sharedWhisperModel *transcription.SharedWhisperModel
+	whisperConfig      transcription.WhisperConfig
+	rnnoiseModelPath   string
+	enableDebugWAV     bool
 }
 
 // PeerConnection represents a single WebRTC peer connection
@@ -37,9 +38,10 @@ type PeerConnection struct {
 
 // ManagerConfig contains configuration for creating pipelines
 type ManagerConfig struct {
-	WhisperConfig    transcription.WhisperConfig
-	RNNoiseModelPath string
-	EnableDebugWAV   bool
+	SharedWhisperModel *transcription.SharedWhisperModel
+	WhisperConfig      transcription.WhisperConfig
+	RNNoiseModelPath   string
+	EnableDebugWAV     bool
 }
 
 // New creates a new WebRTC manager
@@ -49,12 +51,13 @@ func New(log *logger.Logger, iceServers []webrtc.ICEServer, config ManagerConfig
 	}
 
 	return &Manager{
-		logger:           log.With("webrtc"),
-		peerConns:        make(map[string]*PeerConnection),
-		config:           webrtcConfig,
-		whisperConfig:    config.WhisperConfig,
-		rnnoiseModelPath: config.RNNoiseModelPath,
-		enableDebugWAV:   config.EnableDebugWAV,
+		logger:             log.With("webrtc"),
+		peerConns:          make(map[string]*PeerConnection),
+		config:             webrtcConfig,
+		sharedWhisperModel: config.SharedWhisperModel,
+		whisperConfig:      config.WhisperConfig,
+		rnnoiseModelPath:   config.RNNoiseModelPath,
+		enableDebugWAV:     config.EnableDebugWAV,
 	}
 }
 
@@ -70,17 +73,18 @@ func (m *Manager) CreatePipelineForPeer(peerID string, settings *protocol.Contro
 
 	// Create pipeline config with client settings
 	config := transcription.PipelineConfig{
-		WhisperConfig:      m.whisperConfig,
-		RNNoiseModelPath:   m.rnnoiseModelPath,
-		VADEnergyThreshold: settings.VADEnergyThreshold,
-		SilenceThreshold:   time.Duration(settings.SilenceThresholdMs) * time.Millisecond,
-		MinChunkDuration:   time.Duration(settings.MinChunkDurationMs) * time.Millisecond,
-		MaxChunkDuration:   time.Duration(settings.MaxChunkDurationMs) * time.Millisecond,
+		SharedWhisperModel:     m.sharedWhisperModel,
+		WhisperConfig:          m.whisperConfig,
+		RNNoiseModelPath:       m.rnnoiseModelPath,
+		VADEnergyThreshold:     settings.VADEnergyThreshold,
+		SilenceThreshold:       time.Duration(settings.SilenceThresholdMs) * time.Millisecond,
+		MinChunkDuration:       time.Duration(settings.MinChunkDurationMs) * time.Millisecond,
+		MaxChunkDuration:       time.Duration(settings.MaxChunkDurationMs) * time.Millisecond,
 		SpeechDensityThreshold: settings.SpeechDensityThreshold,
-		EnableDebugWAV:     m.enableDebugWAV,
+		EnableDebugWAV:         m.enableDebugWAV,
 	}
 
-	// Create pipeline
+	// Create pipeline (will use shared model instead of loading new one)
 	pipeline, err := transcription.NewTranscriptionPipeline(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pipeline: %w", err)
@@ -131,7 +135,7 @@ func (m *Manager) CreatePeerConnection(id string, onMessage func(msg *protocol.M
 		peer.logger.Info("Peer %s connection state: %s", id, state.String())
 
 		if state == webrtc.PeerConnectionStateFailed ||
-		   state == webrtc.PeerConnectionStateClosed {
+			state == webrtc.PeerConnectionStateClosed {
 			m.RemovePeerConnection(id)
 		}
 	})

@@ -1,3 +1,4 @@
+//go:build rnnoise
 // +build rnnoise
 
 package transcription
@@ -7,9 +8,9 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/xaionaro-go/audio/pkg/audio"
 	"github.com/xaionaro-go/audio/pkg/noisesuppression/implementations/rnnoise"
-	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 const (
@@ -45,7 +46,7 @@ func NewRNNoiseProcessor(modelPath string, log *logger.Logger) (*RNNoiseProcesso
 
 	return &RNNoiseProcessor{
 		denoiser:     denoiser,
-		buffer16kHz:  make([]int16, 0, 160),  // 10ms at 16kHz
+		buffer16kHz:  make([]int16, 0, 160),    // 10ms at 16kHz
 		frameSize16k: PipelineSampleRate / 100, // 10ms = 160 samples at 16kHz
 		log:          contextLog,
 	}, nil

@@ -15,13 +15,13 @@ type VADConfig struct {
 
 // VoiceActivityDetector detects speech vs silence in audio
 type VoiceActivityDetector struct {
-	config              VADConfig
-	samplesPerFrame     int
-	silenceDuration     time.Duration // Accumulated silence duration
-	speechDuration      time.Duration // Accumulated speech duration
-	lastFrameWasSpeech  bool
-	consecutiveSilence  int // Number of consecutive silent frames
-	consecutiveSpeech   int // Number of consecutive speech frames
+	config             VADConfig
+	samplesPerFrame    int
+	silenceDuration    time.Duration // Accumulated silence duration
+	speechDuration     time.Duration // Accumulated speech duration
+	lastFrameWasSpeech bool
+	consecutiveSilence int // Number of consecutive silent frames
+	consecutiveSpeech  int // Number of consecutive speech frames
 }
 
 // NewVAD creates a new Voice Activity Detector

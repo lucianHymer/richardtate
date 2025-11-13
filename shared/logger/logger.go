@@ -79,19 +79,19 @@ func ParseOutputFormat(format string) OutputFormat {
 
 // Logger provides structured logging with configurable output format
 type Logger struct {
-	level      LogLevel
-	format     OutputFormat
-	output     io.Writer
-	mu         sync.Mutex
-	fields     map[string]interface{} // Global fields for all logs
+	level  LogLevel
+	format OutputFormat
+	output io.Writer
+	mu     sync.Mutex
+	fields map[string]interface{} // Global fields for all logs
 }
 
 // Config holds logger configuration
 type Config struct {
-	Level      LogLevel
-	Format     OutputFormat
-	Output     io.Writer
-	Debug      bool // Convenience flag to set level to Debug
+	Level  LogLevel
+	Format OutputFormat
+	Output io.Writer
+	Debug  bool // Convenience flag to set level to Debug
 }
 
 // New creates a new logger with the given configuration

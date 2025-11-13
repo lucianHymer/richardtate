@@ -1,3 +1,4 @@
+//go:build !rnnoise
 // +build !rnnoise
 
 package transcription

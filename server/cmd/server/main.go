@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/pion/webrtc/v4"
 	"github.com/lucianHymer/streaming-transcription/server/internal/api"
 	"github.com/lucianHymer/streaming-transcription/server/internal/config"
-	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
 	webrtcmgr "github.com/lucianHymer/streaming-transcription/server/internal/webrtc"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
+	"github.com/pion/webrtc/v4"
 )
 
 // getDefaultConfigPath returns the XDG Base Directory compliant config path
@@ -72,14 +72,23 @@ func main() {
 		})
 	}
 
-	// Create WebRTC manager config
+	// CRITICAL: Load Whisper model ONCE and share across all pipelines
+	// This prevents loading 1.6GB model for each connection
+	log.Info("Loading shared Whisper model (this may take a moment)...")
+	sharedWhisperModel, err := transcription.LoadSharedWhisperModel(cfg.Transcription.ModelPath, log)
+	if err != nil {
+		log.Fatal("Failed to load Whisper model: %v", err)
+	}
+	log.Info("Whisper model loaded successfully (shared across all connections)")
+
+	// Create WebRTC manager config with shared model
 	// Note: VAD settings now come from each client, not server config
 	managerConfig := webrtcmgr.ManagerConfig{
+		SharedWhisperModel: sharedWhisperModel,
 		WhisperConfig: transcription.WhisperConfig{
-			ModelPath: cfg.Transcription.ModelPath,
-			Language:  cfg.Transcription.Language,
-			Threads:   uint(cfg.Transcription.Threads),
-			Logger:    log,
+			Language: cfg.Transcription.Language,
+			Threads:  uint(cfg.Transcription.Threads),
+			Logger:   log,
 		},
 		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
 		EnableDebugWAV:   cfg.Transcription.EnableDebugWAV,

@@ -25,11 +25,11 @@ type AudioStatistics struct {
 
 // Wizard runs the calibration wizard
 type Wizard struct {
-	cfg         *config.Config
-	baseLog     *logger.Logger
-	log         *logger.ContextLogger
-	serverURL   string
-	capturer    *audio.Capturer
+	cfg       *config.Config
+	baseLog   *logger.Logger
+	log       *logger.ContextLogger
+	serverURL string
+	capturer  *audio.Capturer
 }
 
 // NewWizard creates a new calibration wizard
