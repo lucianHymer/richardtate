@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/server/internal/transcription"
 	"github.com/lucianHymer/streaming-transcription/server/internal/webrtc"
+	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
 )
 
@@ -237,10 +237,10 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 			s.logger.Warn("No settings provided in control.start, using defaults")
 			// Use default values if not provided
 			controlData = protocol.ControlStartData{
-				VADEnergyThreshold: 500.0,
-				SilenceThresholdMs: 1000,
-				MinChunkDurationMs: 500,
-				MaxChunkDurationMs: 30000,
+				VADEnergyThreshold:     500.0,
+				SilenceThresholdMs:     1000,
+				MinChunkDurationMs:     500,
+				MaxChunkDurationMs:     30000,
 				SpeechDensityThreshold: 0.6,
 			}
 		}
@@ -283,6 +283,7 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 // sendTranscriptionResults reads from the pipeline results and sends them to the client
 func (s *Server) sendTranscriptionResults(peerID string, peer *webrtc.PeerConnection, pipeline *transcription.TranscriptionPipeline) {
 	s.logger.Info("Starting transcription result sender for peer %s", peerID)
+	defer s.logger.Info("Stopped transcription result sender for peer %s", peerID)
 
 	for result := range pipeline.Results() {
 		// Check if there was an error

@@ -250,9 +250,9 @@ var globalAPIServer *api.Server
 
 // Session state for tracking complete transcriptions
 var (
-	sessionMu       sync.Mutex
-	sessionChunks   []string
-	sessionStart    time.Time
+	sessionMu        sync.Mutex
+	sessionChunks    []string
+	sessionStart     time.Time
 	sessionRecording bool
 )
 

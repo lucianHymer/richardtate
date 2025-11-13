@@ -13,14 +13,14 @@ import (
 // TranscriptionPipeline handles the complete audio-to-text pipeline
 // Flow: Raw Audio → RNNoise → VAD/Chunker → Whisper → Results
 type TranscriptionPipeline struct {
-	whisper     *WhisperTranscriber
-	rnnoise     *RNNoiseProcessor
-	chunker     *SmartChunker
-	resultChan  chan TranscriptionResult
-	mu          sync.RWMutex
-	active      bool
-	debugWAV    bool // Enable WAV file debugging
-	log         *logger.ContextLogger
+	whisper    *WhisperTranscriberShared // Uses shared model
+	rnnoise    *RNNoiseProcessor
+	chunker    *SmartChunker
+	resultChan chan TranscriptionResult
+	mu         sync.RWMutex
+	active     bool
+	debugWAV   bool // Enable WAV file debugging
+	log        *logger.ContextLogger
 }
 
 // TranscriptionResult holds transcription output
@@ -32,15 +32,16 @@ type TranscriptionResult struct {
 
 // PipelineConfig holds configuration for the transcription pipeline
 type PipelineConfig struct {
-	WhisperConfig      WhisperConfig
-	RNNoiseModelPath   string        // Path to RNNoise model
-	SilenceThreshold   time.Duration // Silence duration to trigger chunk (1s default)
-	MinChunkDuration   time.Duration // Minimum chunk duration
-	MaxChunkDuration   time.Duration // Maximum chunk duration
-	VADEnergyThreshold float64       // VAD energy threshold
-	SpeechDensityThreshold float64   // Speech density threshold for short utterances
-	ResultChannelSize  int           // Size of result channel buffer
-	EnableDebugWAV     bool          // Save WAV files for debugging
+	SharedWhisperModel     *SharedWhisperModel // Shared model across all pipelines
+	WhisperConfig          WhisperConfig
+	RNNoiseModelPath       string        // Path to RNNoise model
+	SilenceThreshold       time.Duration // Silence duration to trigger chunk (1s default)
+	MinChunkDuration       time.Duration // Minimum chunk duration
+	MaxChunkDuration       time.Duration // Maximum chunk duration
+	VADEnergyThreshold     float64       // VAD energy threshold
+	SpeechDensityThreshold float64       // Speech density threshold for short utterances
+	ResultChannelSize      int           // Size of result channel buffer
+	EnableDebugWAV         bool          // Save WAV files for debugging
 }
 
 // NewTranscriptionPipeline creates a new transcription pipeline
@@ -48,8 +49,12 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 	// Create logger
 	log := config.WhisperConfig.Logger.With("pipeline")
 
-	// Create Whisper transcriber
-	whisper, err := NewWhisperTranscriber(config.WhisperConfig)
+	// Create Whisper transcriber using SHARED model
+	if config.SharedWhisperModel == nil {
+		return nil, fmt.Errorf("shared Whisper model is required")
+	}
+
+	whisper, err := NewWhisperTranscriberShared(config.SharedWhisperModel, config.WhisperConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Whisper transcriber: %w", err)
 	}
@@ -78,14 +83,14 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 
 	// Create smart chunker with VAD
 	pipeline.chunker = NewSmartChunker(SmartChunkerConfig{
-		SampleRate:         16000,
-		SilenceThreshold:   config.SilenceThreshold,
-		MinChunkDuration:   config.MinChunkDuration,
-		MaxChunkDuration:   config.MaxChunkDuration,
-		VADEnergyThreshold: config.VADEnergyThreshold,
+		SampleRate:             16000,
+		SilenceThreshold:       config.SilenceThreshold,
+		MinChunkDuration:       config.MinChunkDuration,
+		MaxChunkDuration:       config.MaxChunkDuration,
+		VADEnergyThreshold:     config.VADEnergyThreshold,
 		SpeechDensityThreshold: config.SpeechDensityThreshold,
-		ChunkReadyCallback: pipeline.transcribeChunk,
-		Logger:             config.WhisperConfig.Logger,
+		ChunkReadyCallback:     pipeline.transcribeChunk,
+		Logger:                 config.WhisperConfig.Logger,
 	})
 
 	return pipeline, nil
@@ -267,8 +272,8 @@ func (p *TranscriptionPipeline) GetStats() PipelineStats {
 	chunkerStats := p.chunker.GetStats()
 
 	return PipelineStats{
-		Active:         p.IsActive(),
-		ChunkerStats:   chunkerStats,
+		Active:       p.IsActive(),
+		ChunkerStats: chunkerStats,
 	}
 }
 
@@ -297,13 +302,13 @@ func saveWAV(filename string, pcmData []byte, sampleRate, channels, bitsPerSampl
 
 	// "fmt " subchunk
 	file.WriteString("fmt ")
-	binary.Write(file, binary.LittleEndian, uint32(16))                              // Subchunk size
-	binary.Write(file, binary.LittleEndian, uint16(1))                               // Audio format (1 = PCM)
-	binary.Write(file, binary.LittleEndian, uint16(channels))                        // Number of channels
-	binary.Write(file, binary.LittleEndian, uint32(sampleRate))                      // Sample rate
+	binary.Write(file, binary.LittleEndian, uint32(16))                                  // Subchunk size
+	binary.Write(file, binary.LittleEndian, uint16(1))                                   // Audio format (1 = PCM)
+	binary.Write(file, binary.LittleEndian, uint16(channels))                            // Number of channels
+	binary.Write(file, binary.LittleEndian, uint32(sampleRate))                          // Sample rate
 	binary.Write(file, binary.LittleEndian, uint32(sampleRate*channels*bitsPerSample/8)) // Byte rate
-	binary.Write(file, binary.LittleEndian, uint16(channels*bitsPerSample/8))        // Block align
-	binary.Write(file, binary.LittleEndian, uint16(bitsPerSample))                   // Bits per sample
+	binary.Write(file, binary.LittleEndian, uint16(channels*bitsPerSample/8))            // Block align
+	binary.Write(file, binary.LittleEndian, uint16(bitsPerSample))                       // Bits per sample
 
 	// "data" subchunk
 	file.WriteString("data")

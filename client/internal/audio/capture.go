@@ -11,10 +11,10 @@ import (
 
 const (
 	// Audio capture parameters (matching plan requirements)
-	SampleRate   = 16000 // 16kHz mono as specified
-	Channels     = 1     // Mono
-	ChunkSizeMS  = 200   // 200ms chunks (100-200ms range from plan)
-	Format       = malgo.FormatS16
+	SampleRate    = 16000 // 16kHz mono as specified
+	Channels      = 1     // Mono
+	ChunkSizeMS   = 200   // 200ms chunks (100-200ms range from plan)
+	Format        = malgo.FormatS16
 	BitsPerSample = 16
 )
 
@@ -152,7 +152,7 @@ func (c *Capturer) Start() error {
 		var rms float64
 		if sampleCount > 0 {
 			rms = float64(sum) / float64(sampleCount)
-			rms = float64(int(rms * 100)) / 100.0 // Round to 2 decimals
+			rms = float64(int(rms*100)) / 100.0 // Round to 2 decimals
 		}
 
 		// Log every 10th callback if there's significant audio

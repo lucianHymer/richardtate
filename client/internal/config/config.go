@@ -10,10 +10,10 @@ import (
 // Config holds the client configuration
 type Config struct {
 	Client struct {
-		APIBindAddress string `yaml:"api_bind_address"`
-		Debug          bool   `yaml:"debug"`
-		DebugLogPath   string `yaml:"debug_log_path"`
-		DebugLogMaxSize int   `yaml:"debug_log_max_size"`
+		APIBindAddress  string `yaml:"api_bind_address"`
+		Debug           bool   `yaml:"debug"`
+		DebugLogPath    string `yaml:"debug_log_path"`
+		DebugLogMaxSize int    `yaml:"debug_log_max_size"`
 	} `yaml:"client"`
 
 	Server struct {
@@ -26,10 +26,10 @@ type Config struct {
 
 	Transcription struct {
 		VAD struct {
-			EnergyThreshold      float64 `yaml:"energy_threshold"`
-			SilenceThresholdMs   int     `yaml:"silence_threshold_ms"`
-			MinChunkDurationMs   int     `yaml:"min_chunk_duration_ms"`
-			MaxChunkDurationMs   int     `yaml:"max_chunk_duration_ms"`
+			EnergyThreshold        float64 `yaml:"energy_threshold"`
+			SilenceThresholdMs     int     `yaml:"silence_threshold_ms"`
+			MinChunkDurationMs     int     `yaml:"min_chunk_duration_ms"`
+			MaxChunkDurationMs     int     `yaml:"max_chunk_duration_ms"`
 			SpeechDensityThreshold float64 `yaml:"speech_density_threshold"`
 		} `yaml:"vad"`
 	} `yaml:"transcription"`

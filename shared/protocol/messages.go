@@ -33,10 +33,10 @@ type Message struct {
 // ControlStartData contains transcription settings sent by client
 type ControlStartData struct {
 	// VAD Settings
-	VADEnergyThreshold float64 `json:"vad_energy_threshold"`
-	SilenceThresholdMs int     `json:"silence_threshold_ms"`
-	MinChunkDurationMs int     `json:"min_chunk_duration_ms"`
-	MaxChunkDurationMs int     `json:"max_chunk_duration_ms"`
+	VADEnergyThreshold     float64 `json:"vad_energy_threshold"`
+	SilenceThresholdMs     int     `json:"silence_threshold_ms"`
+	MinChunkDurationMs     int     `json:"min_chunk_duration_ms"`
+	MaxChunkDurationMs     int     `json:"max_chunk_duration_ms"`
 	SpeechDensityThreshold float64 `json:"speech_density_threshold"`
 }
 

@@ -32,9 +32,9 @@ type Server struct {
 	wsUpgrader  websocket.Upgrader
 
 	// Calibration support
-	cfg         *config.Config
-	configPath  string
-	serverURL   string
+	cfg        *config.Config
+	configPath string
+	serverURL  string
 }
 
 // New creates a new API server
@@ -296,10 +296,10 @@ type CalibrateCalculateRequest struct {
 
 // CalibrateCalculateResponse is the response with calculated threshold
 type CalibrateCalculateResponse struct {
-	Threshold                  float64 `json:"threshold"`
-	BackgroundFramesAbove      int     `json:"background_frames_above_percent"`
-	SpeechFramesAbove          int     `json:"speech_frames_above_percent"`
-	RecommendationExplanation  string  `json:"explanation"`
+	Threshold                 float64 `json:"threshold"`
+	BackgroundFramesAbove     int     `json:"background_frames_above_percent"`
+	SpeechFramesAbove         int     `json:"speech_frames_above_percent"`
+	RecommendationExplanation string  `json:"explanation"`
 }
 
 // CalibrateSaveRequest is the request for saving threshold to config
