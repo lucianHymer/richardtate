@@ -2,6 +2,10 @@
 """
 Parakeet MLX Worker Process
 Reads audio from stdin, transcribes with Parakeet, writes to stdout
+
+Requirements:
+  Install with: pip3 install -r scripts/requirements-parakeet.txt
+  Or run: ./scripts/install-parakeet.sh
 """
 
 import sys

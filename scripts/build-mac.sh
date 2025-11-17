@@ -146,8 +146,8 @@ else
     read -p "Would you like to install Parakeet MLX now? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "📦 Installing Parakeet MLX..."
-        if pip3 install parakeet-mlx -U; then
+        echo "📦 Installing Parakeet MLX and dependencies..."
+        if pip3 install -r scripts/requirements-parakeet.txt; then
             echo "✅ Parakeet MLX installed successfully!"
             PARAKEET_INSTALLED=true
 

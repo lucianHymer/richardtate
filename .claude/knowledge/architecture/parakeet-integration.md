@@ -303,10 +303,11 @@ if runtime.GOOS != "darwin" {
 **Location**: `scripts/build-mac.sh` (lines 74-208)
 
 **What It Does**:
-1. Installs MLX framework if not present
-2. Downloads Parakeet MLX model
-3. Verifies Python environment
-4. Sets up worker scripts
+1. Installs Python dependencies from requirements-parakeet.txt
+2. Installs MLX framework if not present
+3. Downloads Parakeet MLX model
+4. Verifies Python environment
+5. Sets up worker scripts
 
 **Usage**:
 ```bash
@@ -314,12 +315,24 @@ if runtime.GOOS != "darwin" {
 ```
 
 ### Manual Installation
-```bash
-# Install MLX framework (macOS only)
-pip install mlx mlx-parakeet
 
-# Download model (automatic on first use)
-# Models cached in ~/.cache/huggingface/
+**Python Dependencies** (REQUIRED):
+```bash
+# Option 1: Use installation script
+./scripts/install-parakeet.sh
+
+# Option 2: Install directly
+pip3 install -r scripts/requirements-parakeet.txt
+```
+
+**Dependencies**:
+- numpy >= 1.24.0
+- parakeet-mlx >= 0.1.0
+
+**Model Download** (automatic on first use):
+```bash
+# Models cached in ~/.cache/parakeet-mlx/
+# First transcription will download model if not present
 ```
 
 ## Design Decisions
