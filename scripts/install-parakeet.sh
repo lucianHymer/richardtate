@@ -23,11 +23,17 @@ echo "Installing with: $PYTHON -m pip"
 echo ""
 echo "✅ Parakeet MLX dependencies installed successfully!"
 echo ""
+
+# Get absolute path to parakeet_worker.py
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WORKER_SCRIPT="$SCRIPT_DIR/parakeet_worker.py"
+
 echo "Add this to your server config:"
 echo ""
 echo "transcription:"
 echo "  engine: \"parakeet\""
 echo "  parakeet:"
 echo "    model_id: \"mlx-community/parakeet-tdt-0.6b-v3\""
+echo "    script_path: \"$WORKER_SCRIPT\""
 echo "    python_path: \"$PYTHON\""
 echo ""
