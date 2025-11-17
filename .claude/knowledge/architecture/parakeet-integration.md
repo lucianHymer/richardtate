@@ -62,10 +62,12 @@ Pipeline → ASRTranscriber Interface → ParakeetTranscriber → Python Subproc
 - Log errors to stderr
 
 **Model Loading**:
-- Model ID from command-line argument
+- Model ID from command-line argument (HuggingFace identifier, not file path)
 - Default: `mlx-community/parakeet-tdt-0.6b-v3`
 - MLX framework accelerated for Apple Silicon
-- Cached in `~/.cache/parakeet-mlx/` (not `~/.cache/huggingface/`)
+- **Automatic download**: Models downloaded on first use by parakeet_mlx.from_pretrained()
+- **Cache location**: `~/.cache/parakeet-mlx/` (NOT `~/.cache/huggingface/`)
+- **No manual download required**: Just specify model ID in config, downloads automatically on first server startup
 
 **Error Handling**:
 - Startup errors logged to stderr
@@ -167,17 +169,18 @@ Go Process                       Python Process
 ```yaml
 transcription:
   engine: "parakeet"  # or "whisper" (default: "whisper")
-  model_path: "mlx-community/parakeet-tdt-0.6b-v3"  # Engine-specific
+  model_path: "mlx-community/parakeet-tdt-0.6b-v3"  # Engine-specific (HuggingFace ID for Parakeet)
 ```
 
 **Engine Selection**:
 - `engine: "whisper"` - Uses Whisper with GGML model file path
-- `engine: "parakeet"` - Uses Parakeet MLX with model ID
+- `engine: "parakeet"` - Uses Parakeet MLX with HuggingFace model identifier
 
 **Model Path Interpretation**:
 - **Whisper**: File path to GGML model (e.g., `/path/to/ggml-large-v3-turbo.bin`)
-- **Parakeet**: Model identifier (e.g., `mlx-community/parakeet-tdt-0.6b-v3`)
-- **Cache Location**: Parakeet models cached in `~/.cache/parakeet-mlx/`, Whisper uses local file path
+- **Parakeet**: HuggingFace model identifier (e.g., `mlx-community/parakeet-tdt-0.6b-v3`) - NOT a file path
+- **Cache Location**: Parakeet models auto-downloaded to `~/.cache/parakeet-mlx/` on first use, Whisper uses local file path
+- **Download**: Parakeet models downloaded automatically on first server startup with `engine: "parakeet"`, no manual download needed
 
 ### Manager Configuration
 **Location**: `server/internal/webrtc/manager.go`
@@ -303,11 +306,10 @@ if runtime.GOOS != "darwin" {
 **Location**: `scripts/build-mac.sh` (lines 74-208)
 
 **What It Does**:
-1. Installs Python dependencies from requirements-parakeet.txt
+1. Installs Python dependencies from `scripts/requirements-parakeet.txt`
 2. Installs MLX framework if not present
-3. Downloads Parakeet MLX model
+3. Sets up worker scripts (model downloaded automatically on first use)
 4. Verifies Python environment
-5. Sets up worker scripts
 
 **Usage**:
 ```bash
@@ -325,14 +327,21 @@ if runtime.GOOS != "darwin" {
 pip3 install -r scripts/requirements-parakeet.txt
 ```
 
-**Dependencies**:
+**Dependencies** (`scripts/requirements-parakeet.txt`):
 - numpy >= 1.24.0
 - parakeet-mlx >= 0.1.0
 
 **Model Download** (automatic on first use):
 ```bash
 # Models cached in ~/.cache/parakeet-mlx/
-# First transcription will download model if not present
+# First server startup with engine: "parakeet" downloads model automatically
+# No manual download needed - parakeet_mlx.from_pretrained() handles it
+```
+
+**Verify Installation**:
+```bash
+# Test that worker script can run without import errors
+python3 scripts/parakeet_worker.py --help
 ```
 
 ## Design Decisions

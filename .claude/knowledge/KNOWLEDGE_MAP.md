@@ -44,7 +44,7 @@ How to perform common tasks and operations in this project.
 
 Surprises, non-obvious behaviors, and things to watch out for.
 
-- [Transcription Pipeline Gotchas](gotchas/transcription-gotchas.md) - Critical issues and non-obvious behaviors in transcription pipeline *(Updated: 2025-11-06, Session 16)*
+- [Transcription Pipeline Gotchas](gotchas/transcription-gotchas.md) - Critical issues and non-obvious behaviors in transcription pipeline *(Updated: 2025-11-17)*
 
 ---
 
