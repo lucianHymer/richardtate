@@ -72,23 +72,41 @@ func main() {
 		})
 	}
 
-	// CRITICAL: Load Whisper model ONCE and share across all pipelines
-	// This prevents loading 1.6GB model for each connection
-	log.Info("Loading shared Whisper model (this may take a moment)...")
-	sharedWhisperModel, err := transcription.LoadSharedWhisperModel(cfg.Transcription.ModelPath, log)
-	if err != nil {
-		log.Fatal("Failed to load Whisper model: %v", err)
+	// Load shared Whisper model ONLY if using Whisper engine
+	// Parakeet doesn't need this - it loads models per-subprocess
+	var sharedWhisperModel *transcription.SharedWhisperModel
+	engine := cfg.Transcription.Engine
+	if engine == "" {
+		engine = "whisper" // Default to whisper if not specified
 	}
-	log.Info("Whisper model loaded successfully (shared across all connections)")
+
+	if engine == "whisper" {
+		log.Info("Loading shared Whisper model (this may take a moment)...")
+		var err error
+		sharedWhisperModel, err = transcription.LoadSharedWhisperModel(cfg.Transcription.Whisper.ModelPath, log)
+		if err != nil {
+			log.Fatal("Failed to load Whisper model: %v", err)
+		}
+		log.Info("Whisper model loaded successfully (shared across all connections)")
+	} else {
+		log.Info("ASR engine: %s (model loading deferred to subprocess)", engine)
+	}
 
 	// Create WebRTC manager config with shared model
 	// Note: VAD settings now come from each client, not server config
 	managerConfig := webrtcmgr.ManagerConfig{
+		Engine:             engine, // Use normalized engine (defaults to "whisper")
 		SharedWhisperModel: sharedWhisperModel,
 		WhisperConfig: transcription.WhisperConfig{
-			Language: cfg.Transcription.Language,
-			Threads:  uint(cfg.Transcription.Threads),
+			Language: cfg.Transcription.Whisper.Language,
+			Threads:  uint(cfg.Transcription.Whisper.Threads),
 			Logger:   log,
+		},
+		ParakeetConfig: transcription.ParakeetConfig{
+			ModelPath:  cfg.Transcription.Parakeet.ModelID,
+			ScriptPath: cfg.Transcription.Parakeet.ScriptPath,
+			PythonPath: cfg.Transcription.Parakeet.PythonPath,
+			Logger:     log,
 		},
 		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
 		EnableDebugWAV:   cfg.Transcription.EnableDebugWAV,

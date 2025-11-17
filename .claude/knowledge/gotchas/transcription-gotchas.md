@@ -311,3 +311,41 @@ Raw Audio → RNNoise (if available) → VAD energy calculation
 **Files**: server/internal/transcription/chunker.go, client/internal/config/config.go, shared/protocol/messages.go, server/internal/transcription/pipeline.go, client/config.example.yaml
 
 ---
+
+## Parakeet Python Dependencies Missing
+
+**Discovered**: 2025-11-17
+
+**Problem**: parakeet_worker.py fails with "ModuleNotFoundError: No module named 'numpy'" when Parakeet engine is used.
+
+**Root Cause**: The Python worker script requires numpy and parakeet-mlx packages but they may not be installed if user didn't run through build-mac.sh installation wizard or if pip installation failed silently.
+
+**Solution**:
+1. Created `scripts/requirements-parakeet.txt` with explicit dependencies
+2. Created `scripts/install-parakeet.sh` for easy installation
+3. Updated build-mac.sh to use requirements file instead of direct pip install
+4. Updated README.md with manual installation instructions
+
+**Installation**:
+```bash
+# Quick install
+./scripts/install-parakeet.sh
+
+# Or manually
+pip3 install -r scripts/requirements-parakeet.txt
+```
+
+**Dependencies**:
+- numpy >= 1.24.0
+- parakeet-mlx >= 0.1.0
+
+**Testing Before Commit**: Always test Python scripts can actually run before committing:
+```bash
+python3 scripts/parakeet_worker.py --help  # Should not fail with import errors
+```
+
+**Why This Matters**: Python import errors only appear at runtime, not during Go build. Must test scripts directly to catch these issues.
+
+**Files**: scripts/requirements-parakeet.txt, scripts/install-parakeet.sh, scripts/parakeet_worker.py, scripts/build-mac.sh
+
+---

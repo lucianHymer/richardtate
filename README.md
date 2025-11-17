@@ -175,7 +175,14 @@ This will:
 
 ### Manual Installation
 
-If you prefer manual setup, see the detailed steps in [docs/SETUP.md](docs/SETUP.md).
+If you prefer manual setup:
+
+1. **Install Python dependencies** (for Parakeet MLX engine - optional):
+   ```bash
+   pip3 install -r scripts/requirements-parakeet.txt
+   ```
+
+2. **Follow detailed build steps** in [docs/SETUP.md](docs/SETUP.md).
 
 ### Post-Installation
 

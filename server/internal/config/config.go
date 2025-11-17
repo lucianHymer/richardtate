@@ -20,10 +20,24 @@ type Config struct {
 	} `yaml:"webrtc"`
 
 	Transcription struct {
-		ModelPath      string `yaml:"model_path"`
-		Language       string `yaml:"language"`
-		Threads        int    `yaml:"threads"`
-		EnableDebugWAV bool   `yaml:"enable_debug_wav"` // Save chunks as WAV files for debugging
+		Engine string `yaml:"engine"` // ASR engine: "whisper" or "parakeet" (default: "whisper")
+
+		// Whisper-specific settings
+		Whisper struct {
+			ModelPath string `yaml:"model_path"` // Path to GGML model file
+			Threads   int    `yaml:"threads"`    // Number of threads for processing
+			Language  string `yaml:"language"`   // Language code (e.g., "en")
+		} `yaml:"whisper"`
+
+		// Parakeet-specific settings
+		Parakeet struct {
+			ModelID    string `yaml:"model_id"`    // Model identifier (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
+			ScriptPath string `yaml:"script_path"` // Path to parakeet_worker.py script
+			PythonPath string `yaml:"python_path"` // Path to Python interpreter (default: "python3")
+		} `yaml:"parakeet"`
+
+		// Shared settings
+		EnableDebugWAV bool `yaml:"enable_debug_wav"` // Save chunks as WAV files for debugging
 	} `yaml:"transcription"`
 
 	NoiseSuppression struct {

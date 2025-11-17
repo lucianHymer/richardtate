@@ -11,9 +11,9 @@ import (
 )
 
 // TranscriptionPipeline handles the complete audio-to-text pipeline
-// Flow: Raw Audio → RNNoise → VAD/Chunker → Whisper → Results
+// Flow: Raw Audio → RNNoise → VAD/Chunker → ASR (Whisper/Parakeet) → Results
 type TranscriptionPipeline struct {
-	whisper    *WhisperTranscriberShared // Uses shared model
+	asr        ASRTranscriber // ASR engine (Whisper or Parakeet)
 	rnnoise    *RNNoiseProcessor
 	chunker    *SmartChunker
 	resultChan chan TranscriptionResult
@@ -32,16 +32,18 @@ type TranscriptionResult struct {
 
 // PipelineConfig holds configuration for the transcription pipeline
 type PipelineConfig struct {
-	SharedWhisperModel     *SharedWhisperModel // Shared model across all pipelines
-	WhisperConfig          WhisperConfig
-	RNNoiseModelPath       string        // Path to RNNoise model
-	SilenceThreshold       time.Duration // Silence duration to trigger chunk (1s default)
-	MinChunkDuration       time.Duration // Minimum chunk duration
-	MaxChunkDuration       time.Duration // Maximum chunk duration
-	VADEnergyThreshold     float64       // VAD energy threshold
-	SpeechDensityThreshold float64       // Speech density threshold for short utterances
-	ResultChannelSize      int           // Size of result channel buffer
-	EnableDebugWAV         bool          // Save WAV files for debugging
+	Engine                 string              // ASR engine: "whisper" or "parakeet" (default: "whisper")
+	SharedWhisperModel     *SharedWhisperModel // Shared model across all pipelines (for Whisper engine)
+	WhisperConfig          WhisperConfig       // Whisper-specific configuration
+	ParakeetConfig         ParakeetConfig      // Parakeet-specific configuration
+	RNNoiseModelPath       string              // Path to RNNoise model
+	SilenceThreshold       time.Duration       // Silence duration to trigger chunk (1s default)
+	MinChunkDuration       time.Duration       // Minimum chunk duration
+	MaxChunkDuration       time.Duration       // Maximum chunk duration
+	VADEnergyThreshold     float64             // VAD energy threshold
+	SpeechDensityThreshold float64             // Speech density threshold for short utterances
+	ResultChannelSize      int                 // Size of result channel buffer
+	EnableDebugWAV         bool                // Save WAV files for debugging
 }
 
 // NewTranscriptionPipeline creates a new transcription pipeline
@@ -49,14 +51,15 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 	// Create logger
 	log := config.WhisperConfig.Logger.With("pipeline")
 
-	// Create Whisper transcriber using SHARED model
-	if config.SharedWhisperModel == nil {
-		return nil, fmt.Errorf("shared Whisper model is required")
-	}
-
-	whisper, err := NewWhisperTranscriberShared(config.SharedWhisperModel, config.WhisperConfig)
+	// Create ASR transcriber using factory
+	asr, err := NewASRTranscriber(ASRConfig{
+		Engine:             config.Engine,
+		SharedWhisperModel: config.SharedWhisperModel,
+		WhisperConfig:      config.WhisperConfig,
+		ParakeetConfig:     config.ParakeetConfig,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Whisper transcriber: %w", err)
+		return nil, fmt.Errorf("failed to create ASR transcriber: %w", err)
 	}
 
 	// Create RNNoise processor
@@ -73,7 +76,7 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 	resultChan := make(chan TranscriptionResult, resultChanSize)
 
 	pipeline := &TranscriptionPipeline{
-		whisper:    whisper,
+		asr:        asr,
 		rnnoise:    rnnoise,
 		resultChan: resultChan,
 		active:     false,
@@ -136,14 +139,14 @@ func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 		p.saveDebugWAV(samples)
 	}
 
-	// Convert int16 samples to float32 for Whisper
+	// Convert int16 samples to float32 for ASR engine
 	floatSamples := make([]float32, len(samples))
 	for i, sample := range samples {
 		floatSamples[i] = float32(sample) / 32768.0
 	}
 
-	// Transcribe
-	text, err := p.whisper.Transcribe(floatSamples)
+	// Transcribe using ASR engine (Whisper or Parakeet)
+	text, err := p.asr.Transcribe(floatSamples)
 
 	// Send result
 	result := TranscriptionResult{
@@ -247,8 +250,8 @@ func (p *TranscriptionPipeline) Close() error {
 
 	p.active = false
 
-	if p.whisper != nil {
-		p.whisper.Close()
+	if p.asr != nil {
+		p.asr.Close()
 	}
 
 	if p.rnnoise != nil {

@@ -20,8 +20,10 @@ type Manager struct {
 	config      webrtc.Configuration
 
 	// Factory config for creating pipelines
+	engine             string                              // ASR engine: "whisper" or "parakeet"
 	sharedWhisperModel *transcription.SharedWhisperModel
 	whisperConfig      transcription.WhisperConfig
+	parakeetConfig     transcription.ParakeetConfig
 	rnnoiseModelPath   string
 	enableDebugWAV     bool
 }
@@ -38,8 +40,10 @@ type PeerConnection struct {
 
 // ManagerConfig contains configuration for creating pipelines
 type ManagerConfig struct {
-	SharedWhisperModel *transcription.SharedWhisperModel
-	WhisperConfig      transcription.WhisperConfig
+	Engine             string                              // ASR engine: "whisper" or "parakeet"
+	SharedWhisperModel *transcription.SharedWhisperModel   // Shared Whisper model (only for Whisper)
+	WhisperConfig      transcription.WhisperConfig         // Whisper-specific configuration
+	ParakeetConfig     transcription.ParakeetConfig        // Parakeet-specific configuration
 	RNNoiseModelPath   string
 	EnableDebugWAV     bool
 }
@@ -54,8 +58,10 @@ func New(log *logger.Logger, iceServers []webrtc.ICEServer, config ManagerConfig
 		logger:             log.With("webrtc"),
 		peerConns:          make(map[string]*PeerConnection),
 		config:             webrtcConfig,
+		engine:             config.Engine,
 		sharedWhisperModel: config.SharedWhisperModel,
 		whisperConfig:      config.WhisperConfig,
+		parakeetConfig:     config.ParakeetConfig,
 		rnnoiseModelPath:   config.RNNoiseModelPath,
 		enableDebugWAV:     config.EnableDebugWAV,
 	}
@@ -73,8 +79,10 @@ func (m *Manager) CreatePipelineForPeer(peerID string, settings *protocol.Contro
 
 	// Create pipeline config with client settings
 	config := transcription.PipelineConfig{
+		Engine:                 m.engine,
 		SharedWhisperModel:     m.sharedWhisperModel,
 		WhisperConfig:          m.whisperConfig,
+		ParakeetConfig:         m.parakeetConfig,
 		RNNoiseModelPath:       m.rnnoiseModelPath,
 		VADEnergyThreshold:     settings.VADEnergyThreshold,
 		SilenceThreshold:       time.Duration(settings.SilenceThresholdMs) * time.Millisecond,
