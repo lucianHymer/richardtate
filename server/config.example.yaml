@@ -21,8 +21,19 @@ webrtc:
 
 # Transcription configuration
 transcription:
-  # Whisper model path (relative to server binary or absolute)
-  # Download with: ./scripts/download-models.sh
+  # ASR engine: "whisper" or "parakeet"
+  # Default: "whisper" (if not specified)
+  #
+  # Whisper: Traditional, robust transcription (CPU or GPU accelerated)
+  # Parakeet: Apple Silicon optimized, word-level timestamps (requires macOS + Parakeet MLX)
+  #
+  # To install Parakeet: pip3 install parakeet-mlx
+  # Model auto-downloads from mlx-community/parakeet-tdt-0.6b-v3
+  engine: "whisper"
+
+  # Model path (engine-specific):
+  # - Whisper: Path to GGML model file (e.g., "./models/ggml-large-v3-turbo.bin")
+  # - Parakeet: Model ID or path (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
   model_path: "./models/ggml-large-v3-turbo.bin"
 
   # Language code (e.g., "en", "es", "fr") or empty for auto-detect
@@ -30,6 +41,7 @@ transcription:
 
   # Number of CPU threads for transcription (0 = auto-detect)
   # Higher values = faster transcription but more CPU usage
+  # Note: Only applies to Whisper engine
   threads: 0
 
   # Save audio chunks as WAV files to /tmp/chunk-*.wav for debugging

@@ -33,6 +33,7 @@ type TranscriptionResult struct {
 // PipelineConfig holds configuration for the transcription pipeline
 type PipelineConfig struct {
 	Engine                 string              // ASR engine: "whisper" or "parakeet" (default: "whisper")
+	ModelPath              string              // Model path (engine-specific)
 	SharedWhisperModel     *SharedWhisperModel // Shared model across all pipelines (for Whisper engine)
 	WhisperConfig          WhisperConfig       // Whisper-specific configuration
 	RNNoiseModelPath       string              // Path to RNNoise model
@@ -55,6 +56,10 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		Engine:             config.Engine,
 		SharedWhisperModel: config.SharedWhisperModel,
 		WhisperConfig:      config.WhisperConfig,
+		ParakeetConfig: ParakeetConfig{
+			ModelPath: config.ModelPath,
+			Logger:    config.WhisperConfig.Logger,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ASR transcriber: %w", err)

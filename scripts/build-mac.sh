@@ -71,6 +71,142 @@ else
     fi
 fi
 
+# Check for Parakeet MLX (optional - for alternative ASR engine)
+PARAKEET_INSTALLED=false
+PARAKEET_MODEL_PATH="$PROJECT_ROOT/models/parakeet/parakeet-tdt-0.6b"
+
+echo "🦜 Checking Parakeet MLX installation..."
+if python3 -c "import parakeet_mlx" 2>/dev/null; then
+    echo "✅ Parakeet MLX is installed"
+    PARAKEET_INSTALLED=true
+
+    # Check if model exists
+    if [ -d "$PARAKEET_MODEL_PATH" ]; then
+        echo "✅ Parakeet model found at: $PARAKEET_MODEL_PATH"
+    else
+        echo "⚠️  Parakeet model not found"
+        echo ""
+        echo "Parakeet models enable an alternative ASR engine optimized for Apple Silicon."
+        echo ""
+        read -p "Would you like to download the Parakeet model now? (~600MB) (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "📥 Downloading Parakeet model..."
+            mkdir -p "$PROJECT_ROOT/models/parakeet"
+
+            # Create a temporary Python script to download the model
+            cat > /tmp/download_parakeet.py << 'EOF'
+import sys
+from parakeet_mlx import from_pretrained
+import shutil
+import os
+
+model_id = "mlx-community/parakeet-tdt-0.6b-v3"
+target_dir = sys.argv[1]
+
+print(f"Downloading {model_id}...")
+try:
+    # This downloads to cache first
+    model = from_pretrained(model_id)
+    print(f"Model downloaded successfully")
+
+    # The model is cached in ~/.cache/parakeet-mlx/
+    # We'll keep it there and just note the location
+    print(f"Model is cached and ready to use with ID: {model_id}")
+
+    # Create a marker file to indicate the model is ready
+    marker_path = os.path.join(target_dir, "parakeet-tdt-0.6b")
+    os.makedirs(marker_path, exist_ok=True)
+    with open(os.path.join(marker_path, "MODEL_ID"), "w") as f:
+        f.write(model_id)
+
+except Exception as e:
+    print(f"Error downloading model: {e}")
+    sys.exit(1)
+EOF
+
+            if python3 /tmp/download_parakeet.py "$PROJECT_ROOT/models/parakeet"; then
+                echo "✅ Parakeet model downloaded successfully!"
+            else
+                echo "❌ Failed to download Parakeet model. You can try again later."
+            fi
+            rm /tmp/download_parakeet.py
+            echo ""
+        else
+            echo "Skipping Parakeet model download. You can download it later if needed."
+            echo ""
+        fi
+    fi
+else
+    echo "⚠️  Parakeet MLX not installed"
+    echo ""
+    echo "Parakeet MLX provides an alternative ASR engine optimized for Apple Silicon."
+    echo "It offers better performance than Whisper on Mac with features like word-level timestamps."
+    echo ""
+    read -p "Would you like to install Parakeet MLX now? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "📦 Installing Parakeet MLX..."
+        if pip3 install parakeet-mlx -U; then
+            echo "✅ Parakeet MLX installed successfully!"
+            PARAKEET_INSTALLED=true
+
+            # Now offer to download the model
+            echo ""
+            read -p "Download Parakeet model now? (~600MB) (y/N) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                echo "📥 Downloading Parakeet model..."
+                mkdir -p "$PROJECT_ROOT/models/parakeet"
+
+                # Same download script as above
+                cat > /tmp/download_parakeet.py << 'EOF'
+import sys
+from parakeet_mlx import from_pretrained
+import shutil
+import os
+
+model_id = "mlx-community/parakeet-tdt-0.6b-v3"
+target_dir = sys.argv[1]
+
+print(f"Downloading {model_id}...")
+try:
+    # This downloads to cache first
+    model = from_pretrained(model_id)
+    print(f"Model downloaded successfully")
+
+    # The model is cached in ~/.cache/parakeet-mlx/
+    # We'll keep it there and just note the location
+    print(f"Model is cached and ready to use with ID: {model_id}")
+
+    # Create a marker file to indicate the model is ready
+    marker_path = os.path.join(target_dir, "parakeet-tdt-0.6b")
+    os.makedirs(marker_path, exist_ok=True)
+    with open(os.path.join(marker_path, "MODEL_ID"), "w") as f:
+        f.write(model_id)
+
+except Exception as e:
+    print(f"Error downloading model: {e}")
+    sys.exit(1)
+EOF
+
+                if python3 /tmp/download_parakeet.py "$PROJECT_ROOT/models/parakeet"; then
+                    echo "✅ Parakeet model ready!"
+                else
+                    echo "❌ Failed to download model. You can try again later."
+                fi
+                rm /tmp/download_parakeet.py
+            fi
+        else
+            echo "❌ Failed to install Parakeet MLX. Continuing without it."
+        fi
+        echo ""
+    else
+        echo "Continuing without Parakeet MLX (using Whisper only)."
+        echo ""
+    fi
+fi
+
 # Get whisper-cpp installation path
 WHISPER_PREFIX=$(brew --prefix whisper-cpp)
 echo "✅ Found whisper-cpp at: $WHISPER_PREFIX"
@@ -217,3 +353,21 @@ else
 fi
 
 echo "💡 With Metal GPU acceleration, expect ~40x realtime transcription speed!"
+
+# Summary of available ASR engines
+echo ""
+echo "📊 Available ASR Engines:"
+echo "  ✅ Whisper - Traditional, robust transcription"
+if [ "$PARAKEET_INSTALLED" = true ] && [ -d "$PARAKEET_MODEL_PATH" ]; then
+    echo "  ✅ Parakeet MLX - Apple Silicon optimized, word-level timestamps"
+    echo ""
+    echo "  To switch between engines, edit ~/.config/richardtate/server.yaml:"
+    echo "    transcription:"
+    echo "      engine: \"whisper\"  # or \"parakeet\""
+elif [ "$PARAKEET_INSTALLED" = true ]; then
+    echo "  ⚠️  Parakeet MLX - Installed but model not downloaded"
+    echo ""
+    echo "  To download model: python3 -c 'from parakeet_mlx import from_pretrained; from_pretrained(\"mlx-community/parakeet-tdt-0.6b-v3\")'"
+else
+    echo "  ⚠️  Parakeet MLX - Not installed (run build script again to install)"
+fi

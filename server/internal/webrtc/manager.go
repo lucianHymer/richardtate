@@ -20,6 +20,8 @@ type Manager struct {
 	config      webrtc.Configuration
 
 	// Factory config for creating pipelines
+	engine             string                              // ASR engine: "whisper" or "parakeet"
+	modelPath          string                              // Model path (engine-specific)
 	sharedWhisperModel *transcription.SharedWhisperModel
 	whisperConfig      transcription.WhisperConfig
 	rnnoiseModelPath   string
@@ -38,6 +40,8 @@ type PeerConnection struct {
 
 // ManagerConfig contains configuration for creating pipelines
 type ManagerConfig struct {
+	Engine             string                              // ASR engine: "whisper" or "parakeet"
+	ModelPath          string                              // Model path (engine-specific)
 	SharedWhisperModel *transcription.SharedWhisperModel
 	WhisperConfig      transcription.WhisperConfig
 	RNNoiseModelPath   string
@@ -54,6 +58,8 @@ func New(log *logger.Logger, iceServers []webrtc.ICEServer, config ManagerConfig
 		logger:             log.With("webrtc"),
 		peerConns:          make(map[string]*PeerConnection),
 		config:             webrtcConfig,
+		engine:             config.Engine,
+		modelPath:          config.ModelPath,
 		sharedWhisperModel: config.SharedWhisperModel,
 		whisperConfig:      config.WhisperConfig,
 		rnnoiseModelPath:   config.RNNoiseModelPath,
@@ -73,6 +79,8 @@ func (m *Manager) CreatePipelineForPeer(peerID string, settings *protocol.Contro
 
 	// Create pipeline config with client settings
 	config := transcription.PipelineConfig{
+		Engine:                 m.engine,
+		ModelPath:              m.modelPath,
 		SharedWhisperModel:     m.sharedWhisperModel,
 		WhisperConfig:          m.whisperConfig,
 		RNNoiseModelPath:       m.rnnoiseModelPath,

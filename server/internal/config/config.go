@@ -20,6 +20,7 @@ type Config struct {
 	} `yaml:"webrtc"`
 
 	Transcription struct {
+		Engine         string `yaml:"engine"`           // ASR engine: "whisper" or "parakeet" (default: "whisper")
 		ModelPath      string `yaml:"model_path"`
 		Language       string `yaml:"language"`
 		Threads        int    `yaml:"threads"`

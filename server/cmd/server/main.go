@@ -84,6 +84,8 @@ func main() {
 	// Create WebRTC manager config with shared model
 	// Note: VAD settings now come from each client, not server config
 	managerConfig := webrtcmgr.ManagerConfig{
+		Engine:             cfg.Transcription.Engine,
+		ModelPath:          cfg.Transcription.ModelPath,
 		SharedWhisperModel: sharedWhisperModel,
 		WhisperConfig: transcription.WhisperConfig{
 			Language: cfg.Transcription.Language,
