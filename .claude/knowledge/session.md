@@ -1,36 +1,9 @@
-### [21:35] [architecture] Whisper Model Sharing Architecture
-**Details**: Critical architecture issue discovered: Each pipeline was creating its own Whisper model (1.6GB each) instead of sharing a single model across contexts. This caused massive memory usage (14-15GB with multiple connections).
+### [20:05] [config] Parakeet model ID and cache location
+**Details**: For Parakeet engine, the model_path config field is NOT a file path - it's a HuggingFace model identifier. The correct value is "mlx-community/parakeet-tdt-0.6b-v3" (not "nvidia/parakeet-tdt-1.1b" which was mentioned in early docs). 
 
-Correct architecture:
-1. Load Whisper model ONCE at server startup
-2. Pass the model (not model path) to pipelines
-3. Each pipeline creates its own context from the shared model
-4. Model lives for entire server lifetime
+The model is automatically downloaded and cached in ~/.cache/parakeet-mlx/ (NOT ~/.cache/huggingface/) on first use by the parakeet_mlx library's from_pretrained() function. No manual download needed - just specify the model ID in config and it downloads automatically.
 
-Whisper.cpp is designed for this - one model can have many contexts for concurrent transcription. Each context is lightweight (~few MB) while the model is heavyweight (1.6GB).
-
-Key insight: whisper.Model and whisper.Context are separate. Model = weights/parameters (shared), Context = processing state (per-session).
-**Files**: server/internal/transcription/whisper.go, server/internal/transcription/pipeline.go, server/internal/webrtc/manager.go
----
-
-### [19:01] [architecture] ASR Interface Abstraction - Phase 1 Complete
-**Details**: Phase 1 of Parakeet integration completed 2025-11-17. Implemented clean ASR interface abstraction layer to support swappable speech recognition engines (Whisper, Parakeet, etc.).
-
-Implementation:
-- asr_interface.go: ASRTranscriber interface with Transcribe() and Close() methods
-- whisper_adapter.go: Adapter wrapping existing WhisperTranscriberShared with zero functional changes
-- asr_factory.go: Factory pattern with NewASRTranscriber(), defaults to "whisper" for backward compatibility
-- pipeline.go: Changed from concrete *WhisperTranscriberShared to ASRTranscriber interface
-
-Key design decision: Simplified ASRConfig structure to avoid duplication with existing WhisperConfig. ASRConfig just contains Engine string, SharedWhisperModel pointer, and WhisperConfig struct. Cleaner separation of concerns.
-
-Backward compatibility guaranteed: Engine defaults to "whisper" if not specified. All existing code works unchanged. No config changes required.
-
-Build verified: Compiles cleanly with full CGO flags (Whisper + RNNoise).
-
-Phase 2 ready: Factory has commented placeholder for "parakeet" case. Need to implement parakeet_transcriber.go (subprocess manager), parakeet_worker.py (real worker), parakeet_mock.py (Linux mock), and config wiring.
-
-Documentation: Updated docs/PARAKEET_SUBPROCESS_IMPLEMENTATION.md with complete Phase 1 status, deviations, and handoff notes at top of file.
-**Files**: server/internal/transcription/asr_interface.go, server/internal/transcription/whisper_adapter.go, server/internal/transcription/asr_factory.go, server/internal/transcription/pipeline.go, docs/PARAKEET_SUBPROCESS_IMPLEMENTATION.md
+Build script (build-mac.sh) installs the parakeet-mlx Python package but doesn't download the model - that happens on first server startup with engine: "parakeet".
+**Files**: server/config.example.yaml, scripts/build-mac.sh, scripts/parakeet_worker.py, .claude/knowledge/architecture/parakeet-integration.md
 ---
 
