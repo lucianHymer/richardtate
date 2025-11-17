@@ -101,8 +101,8 @@ def main():
                 # Transcribe from file
                 result = model.transcribe(temp_wav_path)
 
-                # Send response
-                response = {"text": result['text']}
+                # Send response (result is an AlignedResult object with .text attribute)
+                response = {"text": result.text}
                 print(json.dumps(response), flush=True)
             finally:
                 # Clean up temporary file
