@@ -25,25 +25,34 @@ transcription:
   # Default: "whisper" (if not specified)
   #
   # Whisper: Traditional, robust transcription (CPU or GPU accelerated)
-  # Parakeet: Apple Silicon optimized, word-level timestamps (requires macOS + Parakeet MLX)
-  #
-  # To install Parakeet: pip3 install parakeet-mlx
-  # Model auto-downloads from mlx-community/parakeet-tdt-0.6b-v3
+  # Parakeet: Apple Silicon optimized, faster on M1/M2 (requires macOS + Parakeet MLX)
   engine: "whisper"
 
-  # Model path (engine-specific):
-  # - Whisper: Path to GGML model file (e.g., "./models/ggml-large-v3-turbo.bin")
-  # - Parakeet: Model ID or path (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
-  model_path: "./models/ggml-large-v3-turbo.bin"
+  # Whisper-specific settings (only used when engine: "whisper")
+  whisper:
+    # Path to GGML model file
+    # Download with: ./scripts/download-models.sh
+    model_path: "./models/ggml-large-v3-turbo.bin"
 
-  # Language code (e.g., "en", "es", "fr") or empty for auto-detect
-  language: ""
+    # Number of CPU threads for transcription (0 = auto-detect)
+    # Higher values = faster transcription but more CPU usage
+    threads: 0
 
-  # Number of CPU threads for transcription (0 = auto-detect)
-  # Higher values = faster transcription but more CPU usage
-  # Note: Only applies to Whisper engine
-  threads: 0
+    # Language code (e.g., "en", "es", "fr") or empty for auto-detect
+    language: ""
 
+  # Parakeet-specific settings (only used when engine: "parakeet")
+  parakeet:
+    # Model identifier or path
+    # Examples: "mlx-community/parakeet-tdt-0.6b-v3" or "nvidia/parakeet-tdt-1.1b"
+    # Model auto-downloads from HuggingFace on first use
+    model_id: "mlx-community/parakeet-tdt-0.6b-v3"
+
+    # Path to parakeet_worker.py script
+    # Use absolute path when running as daemon
+    script_path: "/workspace/project/scripts/parakeet_worker.py"
+
+  # Shared settings (apply to all engines)
   # Save audio chunks as WAV files to /tmp/chunk-*.wav for debugging
   enable_debug_wav: false
 

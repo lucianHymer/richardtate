@@ -21,7 +21,8 @@ type Manager struct {
 
 	// Factory config for creating pipelines
 	engine             string                              // ASR engine: "whisper" or "parakeet"
-	modelPath          string                              // Model path (engine-specific)
+	modelPath          string                              // Model path/ID (engine-specific)
+	parakeetScriptPath string                              // Path to parakeet_worker.py script
 	sharedWhisperModel *transcription.SharedWhisperModel
 	whisperConfig      transcription.WhisperConfig
 	rnnoiseModelPath   string
@@ -41,8 +42,9 @@ type PeerConnection struct {
 // ManagerConfig contains configuration for creating pipelines
 type ManagerConfig struct {
 	Engine             string                              // ASR engine: "whisper" or "parakeet"
-	ModelPath          string                              // Model path (engine-specific)
-	SharedWhisperModel *transcription.SharedWhisperModel
+	ModelPath          string                              // Model path/ID (file path for Whisper, model ID for Parakeet)
+	ParakeetScriptPath string                              // Path to parakeet_worker.py script
+	SharedWhisperModel *transcription.SharedWhisperModel   // Shared Whisper model (only for Whisper)
 	WhisperConfig      transcription.WhisperConfig
 	RNNoiseModelPath   string
 	EnableDebugWAV     bool
@@ -60,6 +62,7 @@ func New(log *logger.Logger, iceServers []webrtc.ICEServer, config ManagerConfig
 		config:             webrtcConfig,
 		engine:             config.Engine,
 		modelPath:          config.ModelPath,
+		parakeetScriptPath: config.ParakeetScriptPath,
 		sharedWhisperModel: config.SharedWhisperModel,
 		whisperConfig:      config.WhisperConfig,
 		rnnoiseModelPath:   config.RNNoiseModelPath,
@@ -81,6 +84,7 @@ func (m *Manager) CreatePipelineForPeer(peerID string, settings *protocol.Contro
 	config := transcription.PipelineConfig{
 		Engine:                 m.engine,
 		ModelPath:              m.modelPath,
+		ParakeetScriptPath:     m.parakeetScriptPath,
 		SharedWhisperModel:     m.sharedWhisperModel,
 		WhisperConfig:          m.whisperConfig,
 		RNNoiseModelPath:       m.rnnoiseModelPath,

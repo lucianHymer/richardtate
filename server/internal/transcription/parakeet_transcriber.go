@@ -50,8 +50,11 @@ type ParakeetResponse struct {
 func NewParakeetTranscriber(config ParakeetConfig) (*ParakeetTranscriber, error) {
 	log := config.Logger.With("parakeet")
 
-	// Determine which Python script to use
-	scriptPath := getParakeetScript()
+	// Use configured script path, or auto-detect if not provided
+	scriptPath := config.ScriptPath
+	if scriptPath == "" {
+		scriptPath = getParakeetScript()
+	}
 
 	// Verify script exists
 	if _, err := os.Stat(scriptPath); err != nil {
@@ -270,13 +273,14 @@ func (pt *ParakeetTranscriber) Close() error {
 	return nil
 }
 
-// getParakeetScript returns the path to the appropriate Python script
+// getParakeetScript returns the path to the appropriate Python script (fallback only)
+// NOTE: This is only used as a fallback when ScriptPath is not configured.
+// For daemon use, always configure an absolute path in the config YAML.
 func getParakeetScript() string {
 	// Use real script on macOS, mock on Linux
 	if runtime.GOOS == "darwin" {
 		return filepath.Join("scripts", "parakeet_worker.py")
 	}
-	// Use mock for testing on Linux
 	return filepath.Join("scripts", "parakeet_mock.py")
 }
 

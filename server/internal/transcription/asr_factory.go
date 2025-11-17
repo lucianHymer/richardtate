@@ -8,8 +8,9 @@ import (
 
 // ParakeetConfig holds configuration for Parakeet MLX engine
 type ParakeetConfig struct {
-	ModelPath string        // Path or model ID (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
-	Logger    *logger.Logger // Logger instance
+	ModelPath  string         // Model ID (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
+	ScriptPath string         // Path to parakeet_worker.py script
+	Logger     *logger.Logger // Logger instance
 }
 
 // ASRConfig holds configuration for ASR engine creation
