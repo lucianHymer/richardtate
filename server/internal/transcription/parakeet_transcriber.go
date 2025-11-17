@@ -69,6 +69,8 @@ func NewParakeetTranscriber(config ParakeetConfig) (*ParakeetTranscriber, error)
 
 	// Create command
 	cmd := exec.Command(pythonPath, scriptPath, config.ModelPath)
+	// Inherit environment so subprocess has access to PATH (for FFmpeg, etc.)
+	cmd.Env = os.Environ()
 
 	// Set up pipes
 	stdin, err := cmd.StdinPipe()
