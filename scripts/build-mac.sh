@@ -71,6 +71,33 @@ else
     fi
 fi
 
+# Check for FFmpeg (required for Parakeet MLX)
+FFMPEG_INSTALLED=false
+if command -v ffmpeg &> /dev/null; then
+    echo "✅ FFmpeg is installed"
+    FFMPEG_INSTALLED=true
+else
+    echo "⚠️  FFmpeg not installed"
+    echo ""
+    echo "FFmpeg is required for Parakeet MLX to load audio files."
+    echo ""
+    read -p "Would you like to install FFmpeg now? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "🔨 Installing FFmpeg via Homebrew..."
+        if brew install ffmpeg; then
+            echo "✅ FFmpeg installed successfully!"
+            FFMPEG_INSTALLED=true
+        else
+            echo "❌ FFmpeg installation failed."
+        fi
+        echo ""
+    else
+        echo "Continuing without FFmpeg. Note: Parakeet MLX will not work without it."
+        echo ""
+    fi
+fi
+
 # Check for Parakeet MLX (optional - for alternative ASR engine)
 PARAKEET_INSTALLED=false
 PARAKEET_MODEL_PATH="$PROJECT_ROOT/models/parakeet/parakeet-tdt-0.6b"
@@ -143,6 +170,14 @@ else
     echo "Parakeet MLX provides an alternative ASR engine optimized for Apple Silicon."
     echo "It offers better performance than Whisper on Mac with features like word-level timestamps."
     echo ""
+
+    # Warn if FFmpeg is not installed
+    if [ "$FFMPEG_INSTALLED" = false ]; then
+        echo "⚠️  WARNING: FFmpeg is not installed. Parakeet MLX requires FFmpeg to work."
+        echo "   Install FFmpeg first: brew install ffmpeg"
+        echo ""
+    fi
+
     read -p "Would you like to install Parakeet MLX now? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -357,7 +392,12 @@ echo ""
 echo "📊 Available ASR Engines:"
 echo "  ✅ Whisper - Traditional, robust transcription"
 if [ "$PARAKEET_INSTALLED" = true ] && [ -d "$PARAKEET_MODEL_PATH" ]; then
-    echo "  ✅ Parakeet MLX - Apple Silicon optimized, word-level timestamps"
+    if [ "$FFMPEG_INSTALLED" = true ]; then
+        echo "  ✅ Parakeet MLX - Apple Silicon optimized, word-level timestamps"
+    else
+        echo "  ⚠️  Parakeet MLX - Installed but FFmpeg missing (required for audio loading)"
+        echo "     Install FFmpeg: brew install ffmpeg"
+    fi
     echo ""
     echo "  To switch between engines, edit ~/.config/richardtate/server.yaml:"
     echo "    transcription:"

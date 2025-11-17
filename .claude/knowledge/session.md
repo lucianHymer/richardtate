@@ -92,3 +92,27 @@ cmd.Env = env
 **Files**: server/internal/transcription/parakeet_transcriber.go
 ---
 
+### [23:45] [gotcha] Parakeet MLX Returns AlignedResult Object Not Dict
+**Details**: **Discovered**: 2025-11-17
+
+**Problem**: Accessing transcription result with `result['text']` fails with "TypeError: 'AlignedResult' object is not subscriptable"
+
+**Root Cause**: Parakeet MLX's `transcribe()` method returns an `AlignedResult` object, not a dictionary. It's an object with attributes, not a dict with keys.
+
+**Solution**: Access as attribute instead of dictionary:
+```python
+# WRONG
+response = {"text": result['text']}  # TypeError!
+
+# CORRECT
+response = {"text": result.text}  # Attribute access
+```
+
+**Why**: The `AlignedResult` class has a `.text` attribute containing the transcribed text. It may also have other attributes like `.segments`, `.language`, etc.
+
+**Testing**: After transcription completes, check stderr logs for "Model loaded successfully" followed by successful response (no TypeError).
+
+**Files**: scripts/parakeet_worker.py
+**Files**: scripts/parakeet_worker.py
+---
+
