@@ -69,8 +69,23 @@ func NewParakeetTranscriber(config ParakeetConfig) (*ParakeetTranscriber, error)
 
 	// Create command
 	cmd := exec.Command(pythonPath, scriptPath, config.ModelPath)
-	// Inherit environment so subprocess has access to PATH (for FFmpeg, etc.)
-	cmd.Env = os.Environ()
+
+	// Inherit environment and ensure common FFmpeg locations are in PATH
+	env := os.Environ()
+	pathSet := false
+	for i, e := range env {
+		if len(e) > 5 && e[:5] == "PATH=" {
+			// Prepend common FFmpeg locations to PATH
+			env[i] = "PATH=/opt/homebrew/bin:/usr/local/bin:" + e[5:]
+			pathSet = true
+			break
+		}
+	}
+	if !pathSet {
+		// No PATH in environment, set a default
+		env = append(env, "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+	}
+	cmd.Env = env
 
 	// Set up pipes
 	stdin, err := cmd.StdinPipe()
@@ -116,6 +131,14 @@ func (pt *ParakeetTranscriber) start() error {
 	}
 
 	pt.log.Info("Starting Parakeet subprocess with model: %s", pt.modelPath)
+
+	// Debug: Log PATH being passed to subprocess
+	for _, e := range pt.cmd.Env {
+		if len(e) > 5 && e[:5] == "PATH=" {
+			pt.log.Debug("Subprocess PATH: %s", e[5:])
+			break
+		}
+	}
 
 	// Start the process
 	if err := pt.cmd.Start(); err != nil {

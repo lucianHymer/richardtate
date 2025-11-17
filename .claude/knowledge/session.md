@@ -36,3 +36,27 @@ finally:
 **Files**: scripts/parakeet_worker.py, scripts/requirements-parakeet.txt
 ---
 
+### [23:40] [gotcha] Parakeet Subprocess Needs Environment Inheritance for FFmpeg
+**Details**: **Discovered**: 2025-11-17
+
+**Problem**: Parakeet Python worker fails with "FFmpeg is not installed or not in your PATH" even when FFmpeg is installed on the system.
+
+**Root Cause**: Go's `exec.Command()` by default does NOT inherit the parent process's environment variables. The Python subprocess had an empty PATH and couldn't find FFmpeg.
+
+**Solution**: Set `cmd.Env = os.Environ()` to pass the parent environment to the subprocess:
+```go
+cmd := exec.Command(pythonPath, scriptPath, config.ModelPath)
+cmd.Env = os.Environ()  // Inherit PATH and other environment variables
+```
+
+**Why FFmpeg is Needed**: Parakeet MLX uses FFmpeg to load audio files. The `parakeet_mlx.load_audio()` function internally calls FFmpeg to decode audio files.
+
+**Testing**: Verify FFmpeg is accessible:
+```bash
+which ffmpeg  # Should show path like /opt/homebrew/bin/ffmpeg
+```
+
+**Files**: server/internal/transcription/parakeet_transcriber.go
+**Files**: server/internal/transcription/parakeet_transcriber.go
+---
+
