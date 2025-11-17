@@ -18,6 +18,14 @@ import os
 from pathlib import Path
 from scipy.io import wavfile
 
+# Ensure common FFmpeg locations are in PATH
+ffmpeg_paths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']
+current_path = os.environ.get('PATH', '')
+for ffmpeg_path in ffmpeg_paths:
+    if ffmpeg_path not in current_path and os.path.exists(ffmpeg_path):
+        os.environ['PATH'] = ffmpeg_path + ':' + current_path
+        current_path = os.environ['PATH']
+
 def load_model(model_path):
     """Load Parakeet model from path"""
     from parakeet_mlx import from_pretrained

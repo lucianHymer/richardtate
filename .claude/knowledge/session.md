@@ -60,3 +60,35 @@ which ffmpeg  # Should show path like /opt/homebrew/bin/ffmpeg
 **Files**: server/internal/transcription/parakeet_transcriber.go
 ---
 
+### [23:42] [gotcha] Subprocess Environment Inheritance Not Enough for FFmpeg
+**Details**: **Discovered**: 2025-11-17
+
+**Problem**: Even after setting `cmd.Env = os.Environ()`, the Parakeet Python subprocess still couldn't find FFmpeg.
+
+**Root Cause**: The server process may not have FFmpeg in its PATH, or the PATH order doesn't prioritize Homebrew/local installations. Simply inheriting the environment isn't enough if the parent process doesn't have the right PATH.
+
+**Solution**: Explicitly prepend common FFmpeg installation locations to PATH:
+```go
+env := os.Environ()
+for i, e := range env {
+    if len(e) > 5 && e[:5] == "PATH=" {
+        // Prepend FFmpeg locations
+        env[i] = "PATH=/opt/homebrew/bin:/usr/local/bin:" + e[5:]
+        break
+    }
+}
+cmd.Env = env
+```
+
+**Why This is Needed**: 
+- Homebrew installs FFmpeg to `/opt/homebrew/bin` on Apple Silicon
+- System FFmpeg is in `/usr/local/bin` on Intel Macs
+- Server might be started without these in PATH
+- Subprocess needs explicit PATH modification
+
+**Testing**: Check debug logs for "Subprocess PATH:" to verify FFmpeg directories are included.
+
+**Files**: server/internal/transcription/parakeet_transcriber.go
+**Files**: server/internal/transcription/parakeet_transcriber.go
+---
+
