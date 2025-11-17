@@ -61,8 +61,14 @@ func NewParakeetTranscriber(config ParakeetConfig) (*ParakeetTranscriber, error)
 		return nil, fmt.Errorf("Parakeet worker script not found at %s: %w", scriptPath, err)
 	}
 
+	// Use configured Python path, or default to "python3"
+	pythonPath := config.PythonPath
+	if pythonPath == "" {
+		pythonPath = "python3"
+	}
+
 	// Create command
-	cmd := exec.Command("python3", scriptPath, config.ModelPath)
+	cmd := exec.Command(pythonPath, scriptPath, config.ModelPath)
 
 	// Set up pipes
 	stdin, err := cmd.StdinPipe()

@@ -43,14 +43,23 @@ transcription:
 
   # Parakeet-specific settings (only used when engine: "parakeet")
   parakeet:
-    # Model identifier or path
+    # Model identifier (HuggingFace model ID)
     # Examples: "mlx-community/parakeet-tdt-0.6b-v3" or "nvidia/parakeet-tdt-1.1b"
-    # Model auto-downloads from HuggingFace on first use
+    # Model auto-downloads to ~/.cache/parakeet-mlx/ on first use
     model_id: "mlx-community/parakeet-tdt-0.6b-v3"
 
     # Path to parakeet_worker.py script
     # Use absolute path when running as daemon
     script_path: "/workspace/project/scripts/parakeet_worker.py"
+
+    # Path to Python interpreter (default: "python3")
+    # IMPORTANT: Use the SAME Python that has parakeet-mlx and numpy installed!
+    # If using pyenv: Get full path with `python3 -c "import sys; print(sys.executable)"`
+    # Examples:
+    #   - macOS pyenv: "/Users/username/.pyenv/versions/3.11.9/bin/python3"
+    #   - macOS system: "/usr/bin/python3"
+    #   - macOS homebrew: "/opt/homebrew/bin/python3"
+    python_path: "python3"
 
   # Shared settings (apply to all engines)
   # Save audio chunks as WAV files to /tmp/chunk-*.wav for debugging

@@ -92,25 +92,21 @@ func main() {
 		log.Info("ASR engine: %s (model loading deferred to subprocess)", engine)
 	}
 
-	// Determine model path/ID based on engine
-	modelPathOrID := ""
-	if engine == "whisper" {
-		modelPathOrID = cfg.Transcription.Whisper.ModelPath
-	} else if engine == "parakeet" {
-		modelPathOrID = cfg.Transcription.Parakeet.ModelID
-	}
-
 	// Create WebRTC manager config with shared model
 	// Note: VAD settings now come from each client, not server config
 	managerConfig := webrtcmgr.ManagerConfig{
 		Engine:             engine, // Use normalized engine (defaults to "whisper")
-		ModelPath:          modelPathOrID,
-		ParakeetScriptPath: cfg.Transcription.Parakeet.ScriptPath,
 		SharedWhisperModel: sharedWhisperModel,
 		WhisperConfig: transcription.WhisperConfig{
 			Language: cfg.Transcription.Whisper.Language,
 			Threads:  uint(cfg.Transcription.Whisper.Threads),
 			Logger:   log,
+		},
+		ParakeetConfig: transcription.ParakeetConfig{
+			ModelPath:  cfg.Transcription.Parakeet.ModelID,
+			ScriptPath: cfg.Transcription.Parakeet.ScriptPath,
+			PythonPath: cfg.Transcription.Parakeet.PythonPath,
+			Logger:     log,
 		},
 		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
 		EnableDebugWAV:   cfg.Transcription.EnableDebugWAV,

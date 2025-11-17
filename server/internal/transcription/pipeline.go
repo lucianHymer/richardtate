@@ -33,10 +33,9 @@ type TranscriptionResult struct {
 // PipelineConfig holds configuration for the transcription pipeline
 type PipelineConfig struct {
 	Engine                 string              // ASR engine: "whisper" or "parakeet" (default: "whisper")
-	ModelPath              string              // Model path/ID (engine-specific: file path for Whisper, model ID for Parakeet)
-	ParakeetScriptPath     string              // Path to parakeet_worker.py script (only for Parakeet engine)
 	SharedWhisperModel     *SharedWhisperModel // Shared model across all pipelines (for Whisper engine)
 	WhisperConfig          WhisperConfig       // Whisper-specific configuration
+	ParakeetConfig         ParakeetConfig      // Parakeet-specific configuration
 	RNNoiseModelPath       string              // Path to RNNoise model
 	SilenceThreshold       time.Duration       // Silence duration to trigger chunk (1s default)
 	MinChunkDuration       time.Duration       // Minimum chunk duration
@@ -57,11 +56,7 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		Engine:             config.Engine,
 		SharedWhisperModel: config.SharedWhisperModel,
 		WhisperConfig:      config.WhisperConfig,
-		ParakeetConfig: ParakeetConfig{
-			ModelPath:  config.ModelPath,
-			ScriptPath: config.ParakeetScriptPath,
-			Logger:     config.WhisperConfig.Logger,
-		},
+		ParakeetConfig:     config.ParakeetConfig,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ASR transcriber: %w", err)

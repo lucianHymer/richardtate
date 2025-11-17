@@ -3,19 +3,31 @@
 
 set -e
 
+# Use provided Python path or default to python3
+PYTHON="${1:-python3}"
+
 echo "📦 Installing Python dependencies for Parakeet MLX..."
+echo "Using Python: $PYTHON"
 echo ""
 
-# Check if pip3 is available
-if ! command -v pip3 &> /dev/null; then
-    echo "❌ pip3 not found. Please install Python 3 first."
+# Check if Python is available
+if ! command -v "$PYTHON" &> /dev/null; then
+    echo "❌ $PYTHON not found. Please install Python 3 first."
     exit 1
 fi
 
-# Install requirements
-pip3 install -r "$(dirname "$0")/requirements-parakeet.txt"
+# Get the pip module for this Python
+echo "Installing with: $PYTHON -m pip"
+"$PYTHON" -m pip install -r "$(dirname "$0")/requirements-parakeet.txt"
 
 echo ""
 echo "✅ Parakeet MLX dependencies installed successfully!"
 echo ""
-echo "You can now use engine: \"parakeet\" in your server config."
+echo "Add this to your server config:"
+echo ""
+echo "transcription:"
+echo "  engine: \"parakeet\""
+echo "  parakeet:"
+echo "    model_id: \"mlx-community/parakeet-tdt-0.6b-v3\""
+echo "    python_path: \"$PYTHON\""
+echo ""
