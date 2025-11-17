@@ -33,6 +33,11 @@ Thumbs.db
 *.log
 debug.log
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Config (optional - might want to track template)
 config.local.yaml
 

@@ -13,7 +13,10 @@ import json
 import base64
 import numpy as np
 import traceback
+import tempfile
+import os
 from pathlib import Path
+from scipy.io import wavfile
 
 def load_model(model_path):
     """Load Parakeet model from path"""
@@ -32,6 +35,20 @@ def decode_audio(audio_base64, sample_rate=16000):
     # Convert bytes to float32 array
     audio_float32 = np.frombuffer(audio_bytes, dtype=np.float32)
     return audio_float32
+
+def write_temp_wav(audio_samples, sample_rate=16000):
+    """Write audio samples to a temporary WAV file and return the path"""
+    # Create a temporary file that won't be automatically deleted
+    fd, temp_path = tempfile.mkstemp(suffix='.wav')
+    os.close(fd)  # Close the file descriptor, we'll use wavfile.write
+
+    # Convert float32 [-1, 1] to int16 for WAV file
+    audio_int16 = (audio_samples * 32767).astype(np.int16)
+
+    # Write WAV file
+    wavfile.write(temp_path, sample_rate, audio_int16)
+
+    return temp_path
 
 def main():
     # Get model path from command line
@@ -69,12 +86,20 @@ def main():
             # Decode audio
             audio_samples = decode_audio(audio_base64, sample_rate)
 
-            # Transcribe
-            result = model.transcribe(audio_samples)
+            # Write to temporary WAV file
+            temp_wav_path = write_temp_wav(audio_samples, sample_rate)
 
-            # Send response
-            response = {"text": result.text}
-            print(json.dumps(response), flush=True)
+            try:
+                # Transcribe from file
+                result = model.transcribe(temp_wav_path)
+
+                # Send response
+                response = {"text": result['text']}
+                print(json.dumps(response), flush=True)
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_wav_path):
+                    os.remove(temp_wav_path)
 
         except json.JSONDecodeError as e:
             error_response = {"error": f"Invalid JSON: {str(e)}"}
