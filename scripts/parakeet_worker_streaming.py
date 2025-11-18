@@ -58,6 +58,11 @@ class StreamingManager:
             self.end_stream(client_id)
 
         # Create new streaming context
+        # DEBUG: Using much smaller context window to test finalization
+        # Original was (256, 256) which is way too much lookahead
+        # Let's try (10, 10) for ~10 seconds lookahead
+        context_size = (10, 10)  # Override for testing
+
         self.contexts[client_id] = self.model.transcribe_stream(
             context_size=context_size,
             depth=depth,
