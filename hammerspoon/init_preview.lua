@@ -99,6 +99,9 @@ end
 function startRecording()
     print("Starting recording...")
 
+    -- Set recording flag immediately to prevent double-starts
+    recording = true
+
     -- Create preview window
     createPreviewWindow()
 
@@ -145,10 +148,14 @@ function startRecording()
             end)
 
             ws:connect()
-            recording = true
+            -- recording = true  -- Already set at the beginning
         else
             print("Failed to start recording: " .. tostring(status))
             hs.notify.new({title="Recording Failed", informativeText="Could not start recording. Is the daemon running?"}):send()
+
+            -- Reset flag on failure
+            recording = false
+
             if previewWindow then
                 previewWindow:delete()
                 previewWindow = nil
@@ -160,6 +167,9 @@ end
 -- Stop recording function
 function stopRecording()
     print("Stopping recording...")
+
+    -- Set recording flag immediately to prevent double-stops
+    recording = false
 
     -- Send stop command to daemon
     hs.http.post(CLIENT_URL .. "/stop", "", {["Content-Type"] = "application/json"}, function(status, body, headers)
@@ -194,9 +204,11 @@ function stopRecording()
                 end)
             end
 
-            recording = false
+            -- recording = false  -- Already set at the beginning
         else
             print("Failed to stop recording: " .. tostring(status))
+            -- Reset flag back to true on failure since we're still recording
+            recording = true
         end
     end)
 end
