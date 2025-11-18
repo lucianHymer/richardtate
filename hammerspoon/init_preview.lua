@@ -26,10 +26,12 @@ function createPreviewWindow()
         h = windowHeight
     })
 
-    -- Make it a utility window (floats above other windows)
-    previewWindow:windowStyle({"utility", "titled", "closable"})
+    -- Make it a floating window that stays on top
+    previewWindow:windowStyle({"titled", "closable", "resizable"})
+    previewWindow:level(hs.drawing.windowLevels.floating)  -- Float above other windows
     previewWindow:windowTitle("Transcription Preview (Live)")
     previewWindow:allowTextEntry(false)  -- No interaction
+    previewWindow:bringToFront(true)  -- Bring to front initially
 
     -- Simple HTML with auto-scrolling
     previewWindow:html([[
@@ -75,23 +77,48 @@ function createPreviewWindow()
     ]])
 
     previewWindow:show()
+
+    -- Ensure window is visible
+    hs.timer.doAfter(0.1, function()
+        if previewWindow then
+            previewWindow:hswindow():focus()
+            previewWindow:hswindow():raise()
+        end
+    end)
 end
 
 -- Update preview window with new text
 function updatePreview(text)
     if previewWindow then
-        -- Escape the text for JavaScript
-        local escapedText = text:gsub("\\", "\\\\")
-                                :gsub("'", "\\'")
-                                :gsub("\n", "\\n")
-                                :gsub("\r", "\\r")
+        print("Updating preview with text length:", string.len(text))
+
+        -- Use JSON encoding for safe JavaScript string handling
+        local jsonText = hs.json.encode(text)
 
         -- Replace entire preview content
-        previewWindow:evaluateJavaScript(string.format([[
-            document.getElementById('preview').textContent = '%s';
-            // Auto-scroll to bottom
-            window.scrollTo(0, document.body.scrollHeight);
-        ]], escapedText))
+        local js = string.format([[
+            try {
+                var elem = document.getElementById('preview');
+                if (elem) {
+                    elem.textContent = %s;
+                    // Auto-scroll to bottom
+                    window.scrollTo(0, document.body.scrollHeight);
+                    console.log('Updated preview with text:', %s);
+                } else {
+                    console.error('Preview element not found');
+                }
+            } catch(e) {
+                console.error('Error updating preview:', e);
+            }
+        ]], jsonText, jsonText)
+
+        previewWindow:evaluateJavaScript(js, function(result, error)
+            if error then
+                print("JavaScript error:", error)
+            end
+        end)
+    else
+        print("No preview window to update")
     end
 end
 
@@ -132,18 +159,27 @@ function startRecording()
             -- Connect WebSocket for transcriptions
             ws = hs.websocket.new(WS_URL, function(type, message)
                 if type == "received" then
+                    print("WebSocket received message:", message)
                     local msg = hs.json.decode(message)
                     if msg and msg.type == "transcript_final" then
+                        print("Processing transcript_final message")
                         local data = hs.json.decode(msg.data)
                         if data and data.text then
+                            print("Transcript text length:", string.len(data.text))
                             -- Update preview with full text (replaces everything)
                             updatePreview(data.text)
+                        else
+                            print("No text in transcript data")
                         end
+                    else
+                        print("Message type:", msg and msg.type or "unknown")
                     end
                 elseif type == "open" then
                     print("WebSocket connected")
                 elseif type == "closed" then
                     print("WebSocket closed")
+                else
+                    print("WebSocket event type:", type)
                 end
             end)
 
@@ -176,18 +212,27 @@ function stopRecording()
         if status == 200 then
             print("Recording stopped successfully")
 
-            -- Get final text from preview
+            -- Get final text from preview and clean up
             if previewWindow then
+                print("Getting final text from preview window")
                 previewWindow:evaluateJavaScript("document.getElementById('preview').textContent", function(finalText)
-                    -- Close preview window
-                    previewWindow:delete()
-                    previewWindow = nil
+                    print("Final text retrieved:", finalText and string.len(finalText) or "nil")
 
                     -- Insert the final text at cursor
                     if finalText and finalText ~= "Listening..." and finalText ~= "" then
+                        print("Inserting final text...")
                         hs.eventtap.keyStrokes(finalText)
                     end
+
+                    -- Close preview window after inserting text
+                    if previewWindow then
+                        previewWindow:delete()
+                        previewWindow = nil
+                        print("Preview window closed")
+                    end
                 end)
+            else
+                print("No preview window to close")
             end
 
             -- Hide indicator
