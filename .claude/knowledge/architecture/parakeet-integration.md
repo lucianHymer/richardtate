@@ -1,54 +1,105 @@
 # Parakeet MLX Integration
 
-**Status**: Phase 2 Complete ✅
+**Status**: Phase 2 Complete ✅ (Shared Worker Pattern Implemented)
 **Last Updated**: 2025-11-17
 
 ## Overview
 Parakeet MLX integration as alternative ASR engine alongside Whisper. Provides faster transcription on Apple Silicon through MLX acceleration, with automatic platform detection and fallback mock for testing.
 
+**CRITICAL**: Uses **SharedParakeetWorker** pattern - ONE persistent subprocess shared across all pipelines, mirroring the SharedWhisperModel approach.
+
 ## Architecture
 
 ### Core Design
-- **Subprocess model**: Python worker runs as separate process
+- **Shared worker pattern**: Single persistent Python worker process (not per-pipeline!)
 - **IPC protocol**: JSON messages with Base64-encoded audio over stdin/stdout
 - **Platform detection**: macOS uses real Parakeet MLX, Linux uses mock
-- **Lifecycle management**: Automatic startup, health monitoring, graceful shutdown
-- **Thread-safe**: Mutex-protected communication
+- **Lifecycle management**: Worker starts at server startup, lives for entire server lifetime
+- **Thread-safe**: Mutex-protected communication for concurrent pipeline access
 
 ### Component Integration
 ```
-Pipeline → ASRTranscriber Interface → ParakeetTranscriber → Python Subprocess
-                                                              ↓
-                                         parakeet_worker.py (macOS) or parakeet_mock.py (Linux)
+Server Startup → SharedParakeetWorker (persistent subprocess) ←── Multiple Pipelines
+                          ↓                                         (via ParakeetTranscriber adapters)
+                 parakeet_worker.py (macOS) or parakeet_mock.py (Linux)
 ```
+
+**Memory Efficiency**:
+- **Before (broken)**: N pipelines = N subprocesses = N × model loads (~200MB each)
+- **After (fixed)**: N pipelines = 1 subprocess = 1 × model load (~200MB total)
+- **Savings**: 10 concurrent clients: 2GB → 200MB (90% reduction!)
 
 ## Key Components
 
-### 1. ParakeetTranscriber (`parakeet_transcriber.go`)
-**Location**: `server/internal/transcription/parakeet_transcriber.go`
+### 1. SharedParakeetWorker (`parakeet_shared.go`)
+**Location**: `server/internal/transcription/parakeet_shared.go`
+
+**Purpose**: Manages the single persistent Python subprocess shared across all pipelines
 
 **Responsibilities**:
-- Launch Python worker subprocess
+- Launch Python worker subprocess at server startup
 - Manage stdin/stdout/stderr communication
 - Encode/decode IPC messages (JSON + Base64)
 - Monitor subprocess health
-- Handle graceful shutdown
+- Handle graceful shutdown at server shutdown
 
 **Lifecycle**:
-1. Launch subprocess with configured model path
-2. Wait for startup (60s timeout)
-3. Send test request to verify readiness
-4. Monitor stderr output in background
-5. Process transcription requests
-6. Graceful shutdown on Close() (5s force-kill timeout)
+1. **Server startup**: Launch subprocess with configured model path
+2. **Startup verification**: Wait for readiness (60s timeout), send test request
+3. **Runtime**: Process transcription requests from multiple pipelines concurrently
+4. **Server shutdown**: Graceful shutdown with 5s force-kill timeout
 
-**Threading Model**:
-- Mutex protects stdin/stdout/stderr access
+**Thread Safety**:
+- Mutex protects stdin/stdout/stderr access (subprocess is single-threaded)
+- Multiple pipelines can call Transcribe() concurrently (requests are serialized)
 - Background goroutine monitors stderr output
 - Background goroutine monitors process exit
-- All concurrent operations properly synchronized
 
-### 2. Python Worker Script (`parakeet_worker.py`)
+**Initialization** (main.go):
+```go
+if engine == "parakeet" {
+    sharedParakeetWorker, err = transcription.NewSharedParakeetWorker(transcription.ParakeetConfig{
+        ModelPath:  cfg.Transcription.Parakeet.ModelID,
+        ScriptPath: cfg.Transcription.Parakeet.ScriptPath,
+        PythonPath: cfg.Transcription.Parakeet.PythonPath,
+        Logger:     log,
+    })
+    defer sharedParakeetWorker.Close() // Clean up on server shutdown
+}
+```
+
+### 2. ParakeetTranscriber (`parakeet_transcriber.go`)
+**Location**: `server/internal/transcription/parakeet_transcriber.go`
+
+**Purpose**: Lightweight adapter for SharedParakeetWorker (mirrors WhisperAdapter pattern)
+
+**Responsibilities**:
+- Hold reference to shared worker
+- Forward Transcribe() calls to shared worker
+- No-op Close() (doesn't close shared worker - it lives for entire server lifetime)
+
+**Why Adapter Pattern**:
+- Each pipeline gets its own ParakeetTranscriber instance
+- All instances share the same SharedParakeetWorker
+- Separates pipeline lifecycle from worker lifecycle
+- Enables clean shutdown (pipelines close without affecting worker)
+
+**Lightweight Design** (~40 lines vs previous ~300 lines):
+```go
+type ParakeetTranscriber struct {
+    worker *SharedParakeetWorker  // Reference to shared worker
+}
+
+func (pt *ParakeetTranscriber) Transcribe(samples []float32) (string, error) {
+    return pt.worker.Transcribe(samples)  // Forward to shared worker
+}
+
+func (pt *ParakeetTranscriber) Close() error {
+    return nil  // No-op - shared worker lives for entire server lifetime
+}
+```
+
+### 3. Python Worker Script (`parakeet_worker.py`)
 **Location**: `scripts/parakeet_worker.py`
 
 **Platform**: macOS only (requires MLX framework)
@@ -74,7 +125,7 @@ Pipeline → ASRTranscriber Interface → ParakeetTranscriber → Python Subproc
 - Transcription errors returned as JSON error responses
 - Graceful exit on EOF/SIGTERM
 
-### 3. Mock Worker Script (`parakeet_mock.py`)
+### 4. Mock Worker Script (`parakeet_mock.py`)
 **Location**: `scripts/parakeet_mock.py`
 
 **Platform**: Linux (or any platform for testing)
@@ -86,37 +137,67 @@ Pipeline → ASRTranscriber Interface → ParakeetTranscriber → Python Subproc
 - Same IPC protocol as real worker
 - Fast response for testing pipeline integration
 
-### 4. Factory Integration (`asr_factory.go`)
+### 5. Factory Integration (`asr_factory.go`)
 **Location**: `server/internal/transcription/asr_factory.go`
 
-**Engine Selection**:
+**Engine Selection** (updated for shared worker):
 ```go
 switch engine {
 case "whisper":
-    return &WhisperAdapter{...}, nil
+    return NewWhisperAdapter(config.SharedWhisperModel, config.WhisperConfig)
 case "parakeet":
-    return NewParakeetTranscriber(cfg.ParakeetConfig)
+    if config.SharedParakeetWorker == nil {
+        return nil, fmt.Errorf("SharedParakeetWorker is required for parakeet engine")
+    }
+    return NewParakeetTranscriber(config.SharedParakeetWorker)  // Pass shared worker
 default:
-    return nil, fmt.Errorf("unknown ASR engine: %s", engine)
+    return nil, fmt.Errorf("unsupported ASR engine: %s", engine)
 }
 ```
 
-### 5. Configuration Structures
+### 6. Configuration Structures
 
-**ASRConfig** (extended):
+**ASRConfig** (updated for shared worker):
 ```go
 type ASRConfig struct {
-    Engine             string              // "whisper" or "parakeet"
-    SharedWhisperModel whisper.Model       // For whisper engine
-    WhisperConfig      WhisperConfig       // Whisper-specific settings
-    ParakeetConfig     ParakeetConfig      // Parakeet-specific settings
+    Engine               string                 // "whisper" or "parakeet"
+    SharedWhisperModel   *SharedWhisperModel    // For Whisper engine (shared across pipelines)
+    WhisperConfig        WhisperConfig          // Whisper-specific configuration
+    SharedParakeetWorker *SharedParakeetWorker  // For Parakeet engine (shared across pipelines)
 }
 ```
 
-**ParakeetConfig** (new):
+**ParakeetConfig** (unchanged - used for SharedParakeetWorker initialization):
 ```go
 type ParakeetConfig struct {
-    ModelPath string  // Model identifier (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
+    ModelPath  string         // Model ID (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
+    ScriptPath string         // Path to parakeet_worker.py script
+    PythonPath string         // Path to Python interpreter (default: "python3")
+    Logger     *logger.Logger // Logger instance
+}
+```
+
+**ManagerConfig** (updated for shared worker):
+```go
+type ManagerConfig struct {
+    Engine               string                  // ASR engine: "whisper" or "parakeet"
+    SharedWhisperModel   *SharedWhisperModel     // Shared Whisper model (for Whisper engine)
+    WhisperConfig        WhisperConfig           // Whisper-specific configuration
+    SharedParakeetWorker *SharedParakeetWorker   // Shared Parakeet worker (for Parakeet engine)
+    RNNoiseModelPath     string
+    EnableDebugWAV       bool
+}
+```
+
+**PipelineConfig** (updated for shared worker):
+```go
+type PipelineConfig struct {
+    Engine               string                 // ASR engine: "whisper" or "parakeet"
+    SharedWhisperModel   *SharedWhisperModel    // Shared model (for Whisper engine)
+    WhisperConfig        WhisperConfig          // Whisper-specific configuration
+    SharedParakeetWorker *SharedParakeetWorker  // Shared worker (for Parakeet engine)
+    RNNoiseModelPath     string
+    // ... other VAD/chunker settings
 }
 ```
 
@@ -364,54 +445,61 @@ python3 scripts/parakeet_worker.py --help
 3. **CI/CD**: Build/test on Linux servers
 4. **No conditionals**: Automatic based on runtime.GOOS
 
-### Why One Subprocess Per Pipeline?
-1. **Isolation**: Each client's transcription independent
-2. **Simplicity**: No shared state or coordination needed
-3. **Scalability**: Linear scaling with client count
-4. **Resource control**: Clear per-client resource usage
+### Why Shared Worker (Not Per-Pipeline)?
+1. **Memory efficiency**: One model load vs N model loads (90% reduction for 10 clients)
+2. **Startup speed**: Clients connect instantly (no model loading wait)
+3. **Mirrors Whisper pattern**: Consistent architecture across ASR engines
+4. **Thread-safe**: Mutex protects subprocess access (requests serialized)
+5. **Scalability**: Constant memory regardless of client count
 
 ## Known Limitations
 
-1. **Sequential transcription**: Mutex prevents concurrent requests to same subprocess
-2. **No subprocess pooling**: Each pipeline gets dedicated subprocess
-3. **No automatic restart**: Failed subprocess stays failed
+1. **Sequential transcription**: Mutex prevents concurrent requests (single subprocess is single-threaded)
+2. **Single subprocess**: All pipelines share one worker (failure affects all clients)
+3. **No automatic restart**: Failed subprocess requires server restart
 4. **macOS-only real implementation**: Linux uses mock only
 
 ## Future Enhancements
 
-### Subprocess Pooling
-Share subprocesses across pipelines:
+### Automatic Worker Restart
+Automatically restart failed shared worker:
 ```go
-type ParakeetPool struct {
-    workers []*ParakeetTranscriber
-    queue   chan transcriptionRequest
+func (w *SharedParakeetWorker) Transcribe(samples []float32) (string, error) {
+    if !w.isHealthy() {
+        if err := w.restart(); err != nil {
+            return "", err
+        }
+    }
+    // ... existing transcription logic
 }
 ```
 
-### Automatic Restart
-Restart failed subprocess automatically:
+### Multiple Worker Pool
+Multiple shared workers for higher concurrent throughput:
 ```go
-if !p.process.Running() {
-    p.restart()
+type ParakeetWorkerPool struct {
+    workers []*SharedParakeetWorker
+    nextIdx int  // Round-robin
 }
 ```
 
 ### Streaming Support
 Stream partial results during transcription:
 ```go
-type StreamingParakeetTranscriber struct {
-    ParakeetTranscriber
+type StreamingParakeetWorker struct {
+    SharedParakeetWorker
     results chan PartialResult
 }
 ```
 
 ### Performance Metrics
-Track transcription performance:
+Track shared worker performance:
 ```go
 type ParakeetMetrics struct {
-    TranscriptionCount    int
-    AverageLatency       time.Duration
-    SubprocessRestarts   int
+    ActivePipelines      int           // Current pipelines using worker
+    TotalTranscriptions  int           // Lifetime transcription count
+    AverageLatency       time.Duration // Average transcription time
+    WorkerRestarts       int           // How many times worker restarted
 }
 ```
 
@@ -422,13 +510,22 @@ type ParakeetMetrics struct {
 - [Per-Client Pipeline](per-client-pipeline.md) - How pipelines are created
 
 ## Files
-- `server/internal/transcription/parakeet_transcriber.go` - Go implementation
-- `server/internal/transcription/asr_factory.go` - Factory pattern
-- `server/internal/transcription/pipeline.go` - Pipeline integration
-- `server/internal/webrtc/manager.go` - Engine storage
-- `server/internal/config/config.go` - Configuration
-- `server/config.example.yaml` - Config documentation
-- `server/cmd/server/main.go` - Wiring
-- `scripts/parakeet_worker.py` - Real worker (macOS)
-- `scripts/parakeet_mock.py` - Mock worker (Linux)
+
+**Shared Worker Architecture**:
+- `server/internal/transcription/parakeet_shared.go` - SharedParakeetWorker (persistent subprocess)
+- `server/internal/transcription/parakeet_transcriber.go` - Lightweight adapter (40 lines)
+- `server/cmd/server/main.go` - Worker initialization at startup
+
+**Integration Points**:
+- `server/internal/transcription/asr_factory.go` - Factory pattern (accepts SharedParakeetWorker)
+- `server/internal/transcription/pipeline.go` - Pipeline config (uses SharedParakeetWorker)
+- `server/internal/webrtc/manager.go` - Manager storage (stores SharedParakeetWorker)
+
+**Python Workers**:
+- `scripts/parakeet_worker.py` - Real Parakeet MLX worker (macOS)
+- `scripts/parakeet_mock.py` - Mock worker for testing (Linux)
 - `scripts/build-mac.sh` - Installation automation
+
+**Configuration**:
+- `server/internal/config/config.go` - Server configuration
+- `server/config.example.yaml` - Configuration documentation

@@ -72,9 +72,9 @@ func main() {
 		})
 	}
 
-	// Load shared Whisper model ONLY if using Whisper engine
-	// Parakeet doesn't need this - it loads models per-subprocess
+	// Load shared ASR resources based on engine
 	var sharedWhisperModel *transcription.SharedWhisperModel
+	var sharedParakeetWorker *transcription.SharedParakeetWorker
 	engine := cfg.Transcription.Engine
 	if engine == "" {
 		engine = "whisper" // Default to whisper if not specified
@@ -88,25 +88,34 @@ func main() {
 			log.Fatal("Failed to load Whisper model: %v", err)
 		}
 		log.Info("Whisper model loaded successfully (shared across all connections)")
-	} else {
-		log.Info("ASR engine: %s (model loading deferred to subprocess)", engine)
-	}
-
-	// Create WebRTC manager config with shared model
-	// Note: VAD settings now come from each client, not server config
-	managerConfig := webrtcmgr.ManagerConfig{
-		Engine:             engine, // Use normalized engine (defaults to "whisper")
-		SharedWhisperModel: sharedWhisperModel,
-		WhisperConfig: transcription.WhisperConfig{
-			Language: cfg.Transcription.Whisper.Language,
-			Threads:  uint(cfg.Transcription.Whisper.Threads),
-			Logger:   log,
-		},
-		ParakeetConfig: transcription.ParakeetConfig{
+	} else if engine == "parakeet" {
+		log.Info("Starting shared Parakeet worker (this may take a moment)...")
+		var err error
+		sharedParakeetWorker, err = transcription.NewSharedParakeetWorker(transcription.ParakeetConfig{
 			ModelPath:  cfg.Transcription.Parakeet.ModelID,
 			ScriptPath: cfg.Transcription.Parakeet.ScriptPath,
 			PythonPath: cfg.Transcription.Parakeet.PythonPath,
 			Logger:     log,
+		})
+		if err != nil {
+			log.Fatal("Failed to start Parakeet worker: %v", err)
+		}
+		defer sharedParakeetWorker.Close() // Clean up on shutdown
+		log.Info("Parakeet worker ready (shared across all connections)")
+	} else {
+		log.Fatal("Unknown ASR engine: %s (supported: whisper, parakeet)", engine)
+	}
+
+	// Create WebRTC manager config with shared resources
+	// Note: VAD settings now come from each client, not server config
+	managerConfig := webrtcmgr.ManagerConfig{
+		Engine:               engine, // Use normalized engine (defaults to "whisper")
+		SharedWhisperModel:   sharedWhisperModel,   // Shared Whisper model (for Whisper engine)
+		SharedParakeetWorker: sharedParakeetWorker, // Shared Parakeet worker (for Parakeet engine)
+		WhisperConfig: transcription.WhisperConfig{
+			Language: cfg.Transcription.Whisper.Language,
+			Threads:  uint(cfg.Transcription.Whisper.Threads),
+			Logger:   log,
 		},
 		RNNoiseModelPath: cfg.NoiseSuppression.ModelPath,
 		EnableDebugWAV:   cfg.Transcription.EnableDebugWAV,
