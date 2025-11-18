@@ -15,6 +15,7 @@ import numpy as np
 import traceback
 import os
 from pathlib import Path
+import mlx.core as mx
 
 # Ensure common FFmpeg locations are in PATH
 ffmpeg_paths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']
@@ -71,8 +72,9 @@ class StreamingManager:
         context = self.contexts[client_id]
 
         # Add audio to the streaming context
-        # Parakeet expects audio as numpy array
-        context.add_audio(audio_samples)
+        # Convert numpy array to MLX array - Parakeet MLX expects MLX arrays, not numpy
+        mlx_audio = mx.array(audio_samples)
+        context.add_audio(mlx_audio)
 
         # Get current result (includes both finalized and draft tokens)
         result = context.result
