@@ -212,42 +212,52 @@ function stopRecording()
         if status == 200 then
             print("Recording stopped successfully")
 
-            -- Get final text from preview and clean up
-            if previewWindow then
-                print("Getting final text from preview window")
-                previewWindow:evaluateJavaScript("document.getElementById('preview').textContent", function(finalText)
-                    print("Final text retrieved:", finalText and string.len(finalText) or "nil")
-
-                    -- Insert the final text at cursor
-                    if finalText and finalText ~= "Listening..." and finalText ~= "" then
-                        print("Inserting final text...")
-                        hs.eventtap.keyStrokes(finalText)
-                    end
-
-                    -- Close preview window after inserting text
-                    if previewWindow then
-                        previewWindow:delete()
-                        previewWindow = nil
-                        print("Preview window closed")
-                    end
-                end)
-            else
-                print("No preview window to close")
-            end
-
-            -- Hide indicator
+            -- Hide indicator immediately
             if indicator then
                 indicator:delete()
                 indicator = nil
             end
 
-            -- Disconnect WebSocket after a delay to catch final chunks
-            if ws then
-                hs.timer.doAfter(1, function()
+            -- Update preview window title to show it's finalizing
+            if previewWindow then
+                previewWindow:windowTitle("Transcription Preview (Finalizing...)")
+            end
+
+            -- Wait for final transcription updates before closing
+            -- Give Parakeet time to send final refined text
+            hs.timer.doAfter(1.5, function()
+                print("Waiting period complete, getting final text")
+
+                -- Now get the final text from preview
+                if previewWindow then
+                    print("Getting final text from preview window")
+                    previewWindow:evaluateJavaScript("document.getElementById('preview').textContent", function(finalText)
+                        print("Final text retrieved:", finalText and string.len(finalText) or "nil")
+
+                        -- Insert the final text at cursor
+                        if finalText and finalText ~= "Listening..." and finalText ~= "" then
+                            print("Inserting final text...")
+                            hs.eventtap.keyStrokes(finalText)
+                        end
+
+                        -- Close preview window after inserting text
+                        if previewWindow then
+                            previewWindow:delete()
+                            previewWindow = nil
+                            print("Preview window closed")
+                        end
+                    end)
+                else
+                    print("No preview window to close")
+                end
+
+                -- Disconnect WebSocket
+                if ws then
                     ws:close()
                     ws = nil
-                end)
-            end
+                    print("WebSocket closed")
+                end
+            end)
 
             -- recording = false  -- Already set at the beginning
         else
