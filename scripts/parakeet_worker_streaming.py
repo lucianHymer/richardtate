@@ -49,7 +49,7 @@ class StreamingManager:
     def __init__(self, model):
         self.model = model
         self.contexts = {}  # client_id -> streaming context
-        self.previous_text = {}  # client_id -> previously sent text
+        # Note: No longer tracking previous_text since we send full text for preview
 
     def start_stream(self, client_id, context_size=(256, 256), depth=1):
         """Start a new streaming context for a client"""
@@ -58,10 +58,11 @@ class StreamingManager:
             self.end_stream(client_id)
 
         # Create new streaming context
-        # DEBUG: Using much smaller context window to test finalization
-        # Original was (256, 256) which is way too much lookahead
-        # Let's try (10, 10) for ~10 seconds lookahead
-        context_size = (10, 10)  # Override for testing
+        # Use default context size from request or (256, 256)
+        # NOTE: Larger context = better quality but longer finalization delay
+        # With (256, 256), tokens aren't finalized for ~4 minutes
+        # With (10, 10), tokens finalize after ~10 seconds
+        # Future optimization: Use smaller window (e.g., 60) and only send finalized tokens
 
         self.contexts[client_id] = self.model.transcribe_stream(
             context_size=context_size,
@@ -69,8 +70,6 @@ class StreamingManager:
             keep_original_attention=False  # Use local attention for streaming
         )
         self.contexts[client_id].__enter__()  # Start the context manager
-        # Initialize previous text tracker
-        self.previous_text[client_id] = ""
 
     def add_audio(self, client_id, audio_samples):
         """Add audio to an existing streaming context"""
@@ -126,19 +125,14 @@ class StreamingManager:
         sys.stderr.write(f"Full text: '{result.text}'\n")
         sys.stderr.write(f"Num sentences: {len(result.sentences) if hasattr(result, 'sentences') else 0}\n")
 
-        # Check if text matches what we sent before
-        previous = self.previous_text.get(client_id, "")
-        if previous:
-            sys.stderr.write(f"Previous text: '{previous}'\n")
-            if result.text.startswith(previous):
-                sys.stderr.write(f"Text EXTENDS previous (appends only)\n")
-                new_part = result.text[len(previous):]
-                sys.stderr.write(f"New part: '{new_part}'\n")
-            else:
-                sys.stderr.write(f"Text CHANGED from previous (revisions detected!)\n")
-                sys.stderr.write(f"Common prefix: '{os.path.commonprefix([previous, result.text])}'\n")
+        # Show text length to track growth
+        sys.stderr.write(f"Text length: {len(result.text)} chars\n")
+
+        # Show if we have finalized tokens (for future optimization)
+        if hasattr(context, 'finalized_tokens') and context.finalized_tokens:
+            sys.stderr.write(f"Finalized tokens exist (could use for incremental mode)\n")
         else:
-            sys.stderr.write(f"First result for this client\n")
+            sys.stderr.write(f"No finalized tokens yet (using full preview mode)\n")
 
         sys.stderr.write(f"=== END DEBUG ===\n\n")
         sys.stderr.flush()
@@ -146,23 +140,19 @@ class StreamingManager:
         # Extract the FULL text from the result (entire accumulated transcription)
         full_text = result.text if hasattr(result, 'text') else str(result)
 
-        # Calculate the incremental text (what's new since last time)
-        previous = self.previous_text.get(client_id, "")
-        incremental_text = ""
+        # For preview mode: Always send the FULL text
+        # Client will completely replace the preview each time
+        # This allows Parakeet to revise earlier text as it gets more context
 
-        # Only send the new part that hasn't been sent before
-        if len(full_text) > len(previous):
-            incremental_text = full_text[len(previous):]
-            # Update the previous text tracker
-            self.previous_text[client_id] = full_text
-
-        # Check if we have finalized tokens (stable) vs draft tokens (may change)
-        is_final = hasattr(result, 'finalized') and len(result.finalized) > 0
+        # Note: We're not using finalized_tokens yet because with default
+        # context_size=(256,256) they take 4+ minutes to finalize.
+        # Future optimization could use smaller window and track finalized vs draft.
 
         return {
-            "text": incremental_text,  # Only send the new/incremental text
-            "is_final": is_final,
-            "client_id": client_id
+            "text": full_text,  # Full current transcription (may revise)
+            "is_final": False,  # Always false during streaming
+            "client_id": client_id,
+            "is_preview": True  # Indicate this is preview text that may change
         }
 
     def end_stream(self, client_id):
@@ -173,9 +163,6 @@ class StreamingManager:
             except:
                 pass  # Context might already be closed
             del self.contexts[client_id]
-        # Clean up previous text tracker
-        if client_id in self.previous_text:
-            del self.previous_text[client_id]
 
 def main():
     # Get model path from command line
