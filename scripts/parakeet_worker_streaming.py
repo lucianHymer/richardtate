@@ -78,63 +78,21 @@ class StreamingManager:
 
         context = self.contexts[client_id]
 
-        # DEBUG: Print context attributes to understand the streaming object
-        import sys
-        sys.stderr.write(f"\n=== PARAKEET CONTEXT DEBUG ===\n")
-        sys.stderr.write(f"Context type: {type(context)}\n")
-        sys.stderr.write(f"Context attributes: {[attr for attr in dir(context) if not attr.startswith('_')]}\n")
-
-        sys.stderr.write(f"=== END CONTEXT DEBUG (BEFORE add_audio) ===\n\n")
-        sys.stderr.flush()
+        # Context debug output removed - we now understand the behavior
 
         # Add audio to the streaming context
         # Convert numpy array to MLX array - Parakeet MLX expects MLX arrays, not numpy
         mlx_audio = mx.array(audio_samples)
         context.add_audio(mlx_audio)
 
-        # NOW check for finalized/draft tokens AFTER adding audio
-        sys.stderr.write(f"\n=== TOKENS AFTER add_audio ===\n")
-
-        # These should exist based on the Parakeet streaming API
-        if hasattr(context, 'finalized_tokens'):
-            sys.stderr.write(f"context.finalized_tokens exists: {context.finalized_tokens}\n")
-            sys.stderr.write(f"Type: {type(context.finalized_tokens)}\n")
-            # Try to get text from finalized tokens
-            if context.finalized_tokens:
-                sys.stderr.write(f"Finalized text length: {len(str(context.finalized_tokens))}\n")
-        else:
-            sys.stderr.write(f"NO finalized_tokens attribute!\n")
-
-        if hasattr(context, 'draft_tokens'):
-            sys.stderr.write(f"context.draft_tokens exists: {context.draft_tokens}\n")
-            sys.stderr.write(f"Type: {type(context.draft_tokens)}\n")
-            if context.draft_tokens:
-                sys.stderr.write(f"Draft text length: {len(str(context.draft_tokens))}\n")
-        else:
-            sys.stderr.write(f"NO draft_tokens attribute!\n")
-
-        sys.stderr.write(f"=== END TOKENS ===\n\n")
-        sys.stderr.flush()
+        # Token debug output removed - we now understand finalized vs draft behavior
 
         # Get current result (includes both finalized and draft tokens)
         result = context.result
 
-        # DEBUG: Print AlignedResult details
-        sys.stderr.write(f"\n=== PARAKEET RESULT DEBUG ===\n")
-        sys.stderr.write(f"Result type: {type(result).__name__}\n")
-        sys.stderr.write(f"Full text: '{result.text}'\n")
-        sys.stderr.write(f"Num sentences: {len(result.sentences) if hasattr(result, 'sentences') else 0}\n")
-
-        # Show text length to track growth
-        sys.stderr.write(f"Text length: {len(result.text)} chars\n")
-
-        # Show if we have finalized tokens (for future optimization)
-        if hasattr(context, 'finalized_tokens') and context.finalized_tokens:
-            sys.stderr.write(f"Finalized tokens exist (could use for incremental mode)\n")
-        else:
-            sys.stderr.write(f"No finalized tokens yet (using full preview mode)\n")
-
-        sys.stderr.write(f"=== END DEBUG ===\n\n")
+        # Minimal debug output
+        import sys
+        sys.stderr.write(f"[Parakeet] Text length: {len(result.text)} chars\n")
         sys.stderr.flush()
 
         # Extract the FULL text from the result (entire accumulated transcription)
