@@ -82,6 +82,27 @@ class StreamingManager:
         # Get current result (includes both finalized and draft tokens)
         result = context.result
 
+        # DEBUG: Print full result object to see what we're getting
+        import sys
+        sys.stderr.write(f"\n=== PARAKEET RESULT DEBUG ===\n")
+        sys.stderr.write(f"Result type: {type(result)}\n")
+        sys.stderr.write(f"Result attributes: {dir(result)}\n")
+
+        # Try to access various attributes
+        if hasattr(result, 'text'):
+            sys.stderr.write(f"result.text: '{result.text}'\n")
+        if hasattr(result, 'finalized'):
+            sys.stderr.write(f"result.finalized: '{result.finalized}'\n")
+            sys.stderr.write(f"result.finalized type: {type(result.finalized)}\n")
+        if hasattr(result, 'draft'):
+            sys.stderr.write(f"result.draft: '{result.draft}'\n")
+
+        # Print the full object representation
+        sys.stderr.write(f"Full result str(): '{str(result)}'\n")
+        sys.stderr.write(f"Full result repr(): '{repr(result)}'\n")
+        sys.stderr.write(f"=== END DEBUG ===\n\n")
+        sys.stderr.flush()
+
         # Extract the FULL text from the result (entire accumulated transcription)
         full_text = result.text if hasattr(result, 'text') else str(result)
 
