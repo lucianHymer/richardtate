@@ -16,10 +16,10 @@ type ParakeetConfig struct {
 
 // ASRConfig holds configuration for ASR engine creation
 type ASRConfig struct {
-	Engine             string              // "whisper" or "parakeet"
-	SharedWhisperModel *SharedWhisperModel // For Whisper engine
-	WhisperConfig      WhisperConfig       // For Whisper engine
-	ParakeetConfig     ParakeetConfig      // For Parakeet engine
+	Engine                string                 // "whisper" or "parakeet"
+	SharedWhisperModel    *SharedWhisperModel    // For Whisper engine (shared across pipelines)
+	WhisperConfig         WhisperConfig          // For Whisper engine
+	SharedParakeetWorker  *SharedParakeetWorker  // For Parakeet engine (shared across pipelines)
 }
 
 // NewASRTranscriber creates an ASR transcriber based on the engine configuration
@@ -35,7 +35,10 @@ func NewASRTranscriber(config ASRConfig) (ASRTranscriber, error) {
 		return NewWhisperAdapter(config.SharedWhisperModel, config.WhisperConfig)
 
 	case "parakeet":
-		return NewParakeetTranscriber(config.ParakeetConfig)
+		if config.SharedParakeetWorker == nil {
+			return nil, fmt.Errorf("SharedParakeetWorker is required for parakeet engine")
+		}
+		return NewParakeetTranscriber(config.SharedParakeetWorker)
 
 	default:
 		return nil, fmt.Errorf("unsupported ASR engine: %s (supported: whisper, parakeet)", engine)

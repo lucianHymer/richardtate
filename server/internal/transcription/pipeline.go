@@ -32,18 +32,18 @@ type TranscriptionResult struct {
 
 // PipelineConfig holds configuration for the transcription pipeline
 type PipelineConfig struct {
-	Engine                 string              // ASR engine: "whisper" or "parakeet" (default: "whisper")
-	SharedWhisperModel     *SharedWhisperModel // Shared model across all pipelines (for Whisper engine)
-	WhisperConfig          WhisperConfig       // Whisper-specific configuration
-	ParakeetConfig         ParakeetConfig      // Parakeet-specific configuration
-	RNNoiseModelPath       string              // Path to RNNoise model
-	SilenceThreshold       time.Duration       // Silence duration to trigger chunk (1s default)
-	MinChunkDuration       time.Duration       // Minimum chunk duration
-	MaxChunkDuration       time.Duration       // Maximum chunk duration
-	VADEnergyThreshold     float64             // VAD energy threshold
-	SpeechDensityThreshold float64             // Speech density threshold for short utterances
-	ResultChannelSize      int                 // Size of result channel buffer
-	EnableDebugWAV         bool                // Save WAV files for debugging
+	Engine                 string                 // ASR engine: "whisper" or "parakeet" (default: "whisper")
+	SharedWhisperModel     *SharedWhisperModel    // Shared model across all pipelines (for Whisper engine)
+	WhisperConfig          WhisperConfig          // Whisper-specific configuration
+	SharedParakeetWorker   *SharedParakeetWorker  // Shared worker across all pipelines (for Parakeet engine)
+	RNNoiseModelPath       string                 // Path to RNNoise model
+	SilenceThreshold       time.Duration          // Silence duration to trigger chunk (1s default)
+	MinChunkDuration       time.Duration          // Minimum chunk duration
+	MaxChunkDuration       time.Duration          // Maximum chunk duration
+	VADEnergyThreshold     float64                // VAD energy threshold
+	SpeechDensityThreshold float64                // Speech density threshold for short utterances
+	ResultChannelSize      int                    // Size of result channel buffer
+	EnableDebugWAV         bool                   // Save WAV files for debugging
 }
 
 // NewTranscriptionPipeline creates a new transcription pipeline
@@ -53,10 +53,10 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 
 	// Create ASR transcriber using factory
 	asr, err := NewASRTranscriber(ASRConfig{
-		Engine:             config.Engine,
-		SharedWhisperModel: config.SharedWhisperModel,
-		WhisperConfig:      config.WhisperConfig,
-		ParakeetConfig:     config.ParakeetConfig,
+		Engine:               config.Engine,
+		SharedWhisperModel:   config.SharedWhisperModel,
+		WhisperConfig:        config.WhisperConfig,
+		SharedParakeetWorker: config.SharedParakeetWorker,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ASR transcriber: %w", err)
