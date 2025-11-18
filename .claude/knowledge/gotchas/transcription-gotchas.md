@@ -537,3 +537,36 @@ Without this tracking, the same text gets sent repeatedly, appearing as if text 
 **Files**: scripts/parakeet_worker_streaming.py
 
 ---
+
+## Parakeet Context Window Size Affects Finalization Delay
+
+**Discovered**: 2025-11-18
+
+**Problem**: Parakeet streaming uses a context window that directly affects when tokens become "finalized". With default context_size=(256, 256), tokens don't finalize for 4+ MINUTES of audio, not seconds as expected.
+
+**Critical Understanding**:
+- context_size=(256, 256) means 256 frames lookahead/lookbehind
+- At 16kHz with ~62.5 frames/second, 256 frames = ~4 seconds lookahead
+- Tokens only become "finalized" after passing through the lookahead window
+- This means with (256, 256), tokens aren't finalized until 4+ minutes of audio has been processed!
+
+**Tested Behavior**:
+- With context_size=(10, 10): Tokens finalize after ~10 seconds
+- With context_size=(256, 256): Tokens don't finalize for 4+ minutes
+- result.text contains BOTH finalized AND draft tokens combined
+- finalized_tokens grows over time as tokens pass the lookahead window
+- Text constantly revises until finalized
+
+**Current Solution**:
+Using default (256, 256) for maximum quality and sending full result.text as preview. Accept that text will revise continuously and only commit final text when streaming ends.
+
+**Future Options**:
+1. Reduce context window to ~60 frames (~1 second lookahead) for faster finalization
+2. Dual-mode: Show finalized tokens as "committed" and full text as preview
+3. Adaptive window: Small for responsiveness, larger during pauses for quality
+
+**Why This Matters**: This explains why Parakeet never seemed to finalize tokens in testing - we were using such a large context window that finalization took longer than most test recordings!
+
+**Files**: scripts/parakeet_worker_streaming.py, .claude/knowledge/architecture/parakeet-streaming-preview.md
+
+---
