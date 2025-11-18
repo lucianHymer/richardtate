@@ -176,8 +176,13 @@ function startRecording()
                     end
                 elseif type == "open" then
                     print("WebSocket connected")
-                elseif type == "closed" then
-                    print("WebSocket closed")
+                elseif type == "closed" or type == "fail" then
+                    print("WebSocket closed/failed, type:", type)
+
+                    -- WebSocket closed by server (or failed) - time to insert final text
+                    if not recording then  -- Only if we're in the stopping phase
+                        finishRecording()
+                    end
                 else
                     print("WebSocket event type:", type)
                 end
@@ -200,6 +205,37 @@ function startRecording()
     end)
 end
 
+-- Finish recording - called when WebSocket closes (server is done)
+function finishRecording()
+    print("Finishing recording - inserting final text")
+
+    -- Get final text from preview and insert
+    if previewWindow then
+        print("Getting final text from preview window")
+        previewWindow:evaluateJavaScript("document.getElementById('preview').textContent", function(finalText)
+            print("Final text retrieved:", finalText and string.len(finalText) or "nil")
+
+            -- Insert the final text at cursor
+            if finalText and finalText ~= "Listening..." and finalText ~= "" then
+                print("Inserting final text...")
+                hs.eventtap.keyStrokes(finalText)
+            end
+
+            -- Close preview window after inserting text
+            if previewWindow then
+                previewWindow:delete()
+                previewWindow = nil
+                print("Preview window closed")
+            end
+        end)
+    else
+        print("No preview window to close")
+    end
+
+    -- Clean up WebSocket reference
+    ws = nil
+end
+
 -- Stop recording function
 function stopRecording()
     print("Stopping recording...")
@@ -210,7 +246,7 @@ function stopRecording()
     -- Send stop command to daemon
     hs.http.post(CLIENT_URL .. "/stop", "", {["Content-Type"] = "application/json"}, function(status, body, headers)
         if status == 200 then
-            print("Recording stopped successfully")
+            print("Recording stopped successfully - waiting for server to close WebSocket")
 
             -- Hide indicator immediately
             if indicator then
@@ -223,43 +259,9 @@ function stopRecording()
                 previewWindow:windowTitle("Transcription Preview (Finalizing...)")
             end
 
-            -- Wait for final transcription updates before closing
-            -- Give Parakeet time to send final refined text
-            hs.timer.doAfter(1.5, function()
-                print("Waiting period complete, getting final text")
+            -- Server will send final updates and then close the WebSocket
+            -- finishRecording() will be called when WebSocket closes/fails
 
-                -- Now get the final text from preview
-                if previewWindow then
-                    print("Getting final text from preview window")
-                    previewWindow:evaluateJavaScript("document.getElementById('preview').textContent", function(finalText)
-                        print("Final text retrieved:", finalText and string.len(finalText) or "nil")
-
-                        -- Insert the final text at cursor
-                        if finalText and finalText ~= "Listening..." and finalText ~= "" then
-                            print("Inserting final text...")
-                            hs.eventtap.keyStrokes(finalText)
-                        end
-
-                        -- Close preview window after inserting text
-                        if previewWindow then
-                            previewWindow:delete()
-                            previewWindow = nil
-                            print("Preview window closed")
-                        end
-                    end)
-                else
-                    print("No preview window to close")
-                end
-
-                -- Disconnect WebSocket
-                if ws then
-                    ws:close()
-                    ws = nil
-                    print("WebSocket closed")
-                end
-            end)
-
-            -- recording = false  -- Already set at the beginning
         else
             print("Failed to stop recording: " .. tostring(status))
             -- Reset flag back to true on failure since we're still recording
