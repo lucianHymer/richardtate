@@ -49,6 +49,7 @@ class StreamingManager:
     def __init__(self, model):
         self.model = model
         self.contexts = {}  # client_id -> streaming context
+        self.previous_text = {}  # client_id -> previously sent text
 
     def start_stream(self, client_id, context_size=(256, 256), depth=1):
         """Start a new streaming context for a client"""
@@ -63,6 +64,8 @@ class StreamingManager:
             keep_original_attention=False  # Use local attention for streaming
         )
         self.contexts[client_id].__enter__()  # Start the context manager
+        # Initialize previous text tracker
+        self.previous_text[client_id] = ""
 
     def add_audio(self, client_id, audio_samples):
         """Add audio to an existing streaming context"""
@@ -79,15 +82,24 @@ class StreamingManager:
         # Get current result (includes both finalized and draft tokens)
         result = context.result
 
-        # Extract the text from the result
-        # The result object has .text attribute for current transcription
-        text = result.text if hasattr(result, 'text') else str(result)
+        # Extract the FULL text from the result (entire accumulated transcription)
+        full_text = result.text if hasattr(result, 'text') else str(result)
+
+        # Calculate the incremental text (what's new since last time)
+        previous = self.previous_text.get(client_id, "")
+        incremental_text = ""
+
+        # Only send the new part that hasn't been sent before
+        if len(full_text) > len(previous):
+            incremental_text = full_text[len(previous):]
+            # Update the previous text tracker
+            self.previous_text[client_id] = full_text
 
         # Check if we have finalized tokens (stable) vs draft tokens (may change)
         is_final = hasattr(result, 'finalized') and len(result.finalized) > 0
 
         return {
-            "text": text,
+            "text": incremental_text,  # Only send the new/incremental text
             "is_final": is_final,
             "client_id": client_id
         }
@@ -100,6 +112,9 @@ class StreamingManager:
             except:
                 pass  # Context might already be closed
             del self.contexts[client_id]
+        # Clean up previous text tracker
+        if client_id in self.previous_text:
+            del self.previous_text[client_id]
 
 def main():
     # Get model path from command line

@@ -1,6 +1,6 @@
 # Knowledge Map
 
-**Last Updated**: 2025-11-17
+**Last Updated**: 2025-11-18
 
 This knowledge map provides a comprehensive index to all documented project knowledge. Each entry links to detailed documentation organized by category.
 
@@ -12,7 +12,7 @@ System design, component relationships, and structural decisions.
 - [Transcription Pipeline Architecture](architecture/transcription-pipeline.md) - Real-time pipeline with RNNoise noise suppression, VAD-based smart chunking, and Whisper.cpp transcription *(Updated: 2025-11-06)*
 - [Whisper Model Sharing](architecture/whisper-model-sharing.md) - ✅ Efficient memory usage with single shared model and multiple contexts *(Updated: 2025-11-17)*
 - [ASR Interface Abstraction](architecture/asr-interface-abstraction.md) - ✅ Phases 1 & 2 Complete: Swappable ASR engines (Whisper, Parakeet) via unified interface *(Updated: 2025-11-17)*
-- [Parakeet MLX Integration](architecture/parakeet-integration.md) - ✅ Phase 2 Complete: Parakeet ASR engine with subprocess management and MLX acceleration *(Updated: 2025-11-17)*
+- [Parakeet MLX Integration](architecture/parakeet-integration.md) - ✅ Phase 2 Complete: Parakeet ASR engine with subprocess management, MLX acceleration, and streaming support *(Updated: 2025-11-18)*
 - [Per-Client Pipeline](architecture/per-client-pipeline.md) - Client-controlled transcription pipelines with custom VAD settings per connection *(Updated: 2025-11-06)*
 - [VAD Calibration API](architecture/vad-calibration-api.md) - ✅ Implemented API-driven calibration with Hammerspoon wizard *(Updated: 2025-11-06, Session 15)*
 - [Config Hot-Reload](architecture/config-hot-reload.md) - Automatic configuration reloading for calibration changes without daemon restart *(Updated: 2025-11-06, Session 16)*
@@ -44,7 +44,7 @@ How to perform common tasks and operations in this project.
 
 Surprises, non-obvious behaviors, and things to watch out for.
 
-- [Transcription Pipeline Gotchas](gotchas/transcription-gotchas.md) - Critical issues and non-obvious behaviors in transcription pipeline *(Updated: 2025-11-17)*
+- [Transcription Pipeline Gotchas](gotchas/transcription-gotchas.md) - Critical issues and non-obvious behaviors in transcription pipeline *(Updated: 2025-11-18)*
 
 ---
 
