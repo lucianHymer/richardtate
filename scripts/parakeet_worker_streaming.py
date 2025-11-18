@@ -74,32 +74,67 @@ class StreamingManager:
 
         context = self.contexts[client_id]
 
+        # DEBUG: Print context attributes to understand the streaming object
+        import sys
+        sys.stderr.write(f"\n=== PARAKEET CONTEXT DEBUG ===\n")
+        sys.stderr.write(f"Context type: {type(context)}\n")
+        sys.stderr.write(f"Context attributes: {[attr for attr in dir(context) if not attr.startswith('_')]}\n")
+
+        sys.stderr.write(f"=== END CONTEXT DEBUG (BEFORE add_audio) ===\n\n")
+        sys.stderr.flush()
+
         # Add audio to the streaming context
         # Convert numpy array to MLX array - Parakeet MLX expects MLX arrays, not numpy
         mlx_audio = mx.array(audio_samples)
         context.add_audio(mlx_audio)
 
+        # NOW check for finalized/draft tokens AFTER adding audio
+        sys.stderr.write(f"\n=== TOKENS AFTER add_audio ===\n")
+
+        # These should exist based on the Parakeet streaming API
+        if hasattr(context, 'finalized_tokens'):
+            sys.stderr.write(f"context.finalized_tokens exists: {context.finalized_tokens}\n")
+            sys.stderr.write(f"Type: {type(context.finalized_tokens)}\n")
+            # Try to get text from finalized tokens
+            if context.finalized_tokens:
+                sys.stderr.write(f"Finalized text length: {len(str(context.finalized_tokens))}\n")
+        else:
+            sys.stderr.write(f"NO finalized_tokens attribute!\n")
+
+        if hasattr(context, 'draft_tokens'):
+            sys.stderr.write(f"context.draft_tokens exists: {context.draft_tokens}\n")
+            sys.stderr.write(f"Type: {type(context.draft_tokens)}\n")
+            if context.draft_tokens:
+                sys.stderr.write(f"Draft text length: {len(str(context.draft_tokens))}\n")
+        else:
+            sys.stderr.write(f"NO draft_tokens attribute!\n")
+
+        sys.stderr.write(f"=== END TOKENS ===\n\n")
+        sys.stderr.flush()
+
         # Get current result (includes both finalized and draft tokens)
         result = context.result
 
-        # DEBUG: Print full result object to see what we're getting
-        import sys
+        # DEBUG: Print AlignedResult details
         sys.stderr.write(f"\n=== PARAKEET RESULT DEBUG ===\n")
-        sys.stderr.write(f"Result type: {type(result)}\n")
-        sys.stderr.write(f"Result attributes: {dir(result)}\n")
+        sys.stderr.write(f"Result type: {type(result).__name__}\n")
+        sys.stderr.write(f"Full text: '{result.text}'\n")
+        sys.stderr.write(f"Num sentences: {len(result.sentences) if hasattr(result, 'sentences') else 0}\n")
 
-        # Try to access various attributes
-        if hasattr(result, 'text'):
-            sys.stderr.write(f"result.text: '{result.text}'\n")
-        if hasattr(result, 'finalized'):
-            sys.stderr.write(f"result.finalized: '{result.finalized}'\n")
-            sys.stderr.write(f"result.finalized type: {type(result.finalized)}\n")
-        if hasattr(result, 'draft'):
-            sys.stderr.write(f"result.draft: '{result.draft}'\n")
+        # Check if text matches what we sent before
+        previous = self.previous_text.get(client_id, "")
+        if previous:
+            sys.stderr.write(f"Previous text: '{previous}'\n")
+            if result.text.startswith(previous):
+                sys.stderr.write(f"Text EXTENDS previous (appends only)\n")
+                new_part = result.text[len(previous):]
+                sys.stderr.write(f"New part: '{new_part}'\n")
+            else:
+                sys.stderr.write(f"Text CHANGED from previous (revisions detected!)\n")
+                sys.stderr.write(f"Common prefix: '{os.path.commonprefix([previous, result.text])}'\n")
+        else:
+            sys.stderr.write(f"First result for this client\n")
 
-        # Print the full object representation
-        sys.stderr.write(f"Full result str(): '{str(result)}'\n")
-        sys.stderr.write(f"Full result repr(): '{repr(result)}'\n")
         sys.stderr.write(f"=== END DEBUG ===\n\n")
         sys.stderr.flush()
 
