@@ -116,3 +116,50 @@ response = {"text": result.text}  # Attribute access
 **Files**: scripts/parakeet_worker.py
 ---
 
+### [17:04] [architecture] Parakeet Streaming Integration
+**Details**: Successfully integrated Parakeet streaming implementation (November 2024). Key changes:
+
+1. **Renamed Type**: Changed `SharedParakeetWorkerStreaming` back to `SharedParakeetWorker` to avoid duplicate type issues and maintain consistency with existing code.
+
+2. **Updated ParakeetTranscriber**: Modified to support streaming with client IDs. Each transcriber creates a client on initialization and processes audio through the streaming interface using `ProcessAudio()` instead of direct `Transcribe()`.
+
+3. **Pipeline Streaming Support**: Modified `ProcessChunk()` to handle Parakeet differently - bypasses VAD/chunker and sends audio directly to ASR engine since Parakeet handles its own 1-second buffering internally.
+
+4. **Streaming Protocol**: Uses JSON messages with commands: `start_stream`, `add_audio`, `end_stream`. Each client gets a unique ID for their streaming session.
+
+5. **1-Second Buffering**: Parakeet accumulates audio in 1-second chunks (16000 samples at 16kHz) before transcribing, providing real-time streaming without VAD pauses.
+
+6. **Python Worker**: Uses `parakeet_worker_streaming.py` which maintains streaming contexts per client using parakeet-mlx's `transcribe_stream()` API.
+
+Benefits: Natural speech flow, real-time feedback, no VAD calibration needed, better UX.
+
+Build status: ✅ Compiles successfully with CGO dependencies.
+**Files**: server/internal/transcription/parakeet_shared.go, server/internal/transcription/parakeet_transcriber.go, server/internal/transcription/pipeline.go, scripts/parakeet_worker_streaming.py
+---
+
+### [20:39] [gotcha] Whisper CGO Build Requirements
+**Details**: To build the server with Whisper.cpp support, you MUST source the environment script first:
+
+```bash
+cd /workspace/project/server
+. ../scripts/setup-env.sh  # Sources CGO environment variables
+go build ./cmd/server       # Now build will succeed
+```
+
+The setup-env.sh script sets critical CGO flags:
+- CGO_CFLAGS: Include paths for whisper.h headers
+- CGO_LDFLAGS: Library paths for linking
+- CGO_CFLAGS_ALLOW: Allows -mfma and -mf16c compiler flags
+
+Without sourcing this script, builds will fail with "whisper.h: No such file or directory"
+
+Alternative: Export the variables manually:
+```bash
+export WHISPER_DIR=/workspace/project/deps/whisper.cpp
+export CGO_CFLAGS="-I$WHISPER_DIR/include -I$WHISPER_DIR/ggml/include"
+export CGO_LDFLAGS="-L$WHISPER_DIR/build/src -L$WHISPER_DIR/build/ggml/src -lwhisper -lggml -lggml-base -lggml-cpu -lstdc++ -lm"
+export CGO_CFLAGS_ALLOW="-mfma|-mf16c"
+```
+**Files**: scripts/setup-env.sh, server/cmd/server/main.go
+---
+

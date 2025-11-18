@@ -14,10 +14,11 @@ type ParakeetResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
-// ParakeetTranscriber is a lightweight adapter for the shared Parakeet worker
+// ParakeetTranscriber is a lightweight adapter for the shared Parakeet streaming worker
 // This mirrors the WhisperAdapter pattern - lightweight per-pipeline adapter for shared resource
 type ParakeetTranscriber struct {
-	worker *SharedParakeetWorker
+	worker   *SharedParakeetWorker
+	clientID string // Unique client ID for this transcriber's streaming session
 }
 
 // NewParakeetTranscriber creates a new Parakeet transcriber adapter using the shared worker
@@ -26,19 +27,25 @@ func NewParakeetTranscriber(worker *SharedParakeetWorker) (*ParakeetTranscriber,
 		return nil, fmt.Errorf("shared Parakeet worker is required")
 	}
 
+	// Create a client for this transcriber's streaming session
+	clientID := worker.CreateClient()
+
 	return &ParakeetTranscriber{
-		worker: worker,
+		worker:   worker,
+		clientID: clientID,
 	}, nil
 }
 
-// Transcribe sends audio to the shared worker and returns transcription
-// This is thread-safe - the shared worker handles concurrent access
+// Transcribe processes audio through the streaming interface
+// For Parakeet streaming, this buffers internally and returns transcriptions when available
 func (pt *ParakeetTranscriber) Transcribe(audioSamples []float32) (string, error) {
-	return pt.worker.Transcribe(audioSamples)
+	// Process audio through the streaming interface
+	// The worker handles buffering and returns text when available
+	return pt.worker.ProcessAudio(pt.clientID, audioSamples)
 }
 
-// Close is a no-op for the adapter (shared worker lives for entire server lifetime)
+// Close cleans up the client session
 func (pt *ParakeetTranscriber) Close() error {
-	// Don't close the shared worker - it lives for entire server lifetime
-	return nil
+	// Close the client session (but not the shared worker)
+	return pt.worker.CloseClient(pt.clientID)
 }

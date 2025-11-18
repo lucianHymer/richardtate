@@ -19,9 +19,9 @@ import (
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
-// SharedParakeetWorkerStreaming manages a single persistent Python subprocess for streaming
-// This replaces the batch-based SharedParakeetWorker with a streaming version
-type SharedParakeetWorkerStreaming struct {
+// SharedParakeetWorker manages a single persistent Python subprocess for streaming
+// This is the streaming version that replaces the previous batch-based implementation
+type SharedParakeetWorker struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
 	stdout    *bufio.Reader
@@ -42,19 +42,19 @@ type SharedParakeetWorkerStreaming struct {
 
 // ParakeetClient tracks state for each client's streaming session
 type ParakeetClient struct {
-	ID          string
-	Buffer      []float32 // Accumulate samples until 1 second
+	ID           string
+	Buffer       []float32 // Accumulate samples until 1 second
 	StreamActive bool
 }
 
 // ParakeetStreamRequest for streaming protocol
 type ParakeetStreamRequest struct {
-	Command     string  `json:"command"`                // "start_stream", "add_audio", "end_stream"
-	ClientID    string  `json:"client_id"`              // Unique client identifier
-	Audio       string  `json:"audio,omitempty"`        // Base64 encoded audio (for add_audio)
-	SampleRate  int     `json:"sample_rate,omitempty"`  // Sample rate (for add_audio)
-	ContextSize []int   `json:"context_size,omitempty"` // [left, right] context frames (for start_stream)
-	Depth       int     `json:"depth,omitempty"`        // Encoder depth (for start_stream)
+	Command     string `json:"command"`                // "start_stream", "add_audio", "end_stream"
+	ClientID    string `json:"client_id"`              // Unique client identifier
+	Audio       string `json:"audio,omitempty"`        // Base64 encoded audio (for add_audio)
+	SampleRate  int    `json:"sample_rate,omitempty"`  // Sample rate (for add_audio)
+	ContextSize []int  `json:"context_size,omitempty"` // [left, right] context frames (for start_stream)
+	Depth       int    `json:"depth,omitempty"`        // Encoder depth (for start_stream)
 }
 
 // ParakeetStreamResponse from streaming protocol
@@ -62,12 +62,12 @@ type ParakeetStreamResponse struct {
 	Status   string `json:"status,omitempty"`   // For start/end responses
 	Text     string `json:"text,omitempty"`     // Transcription text
 	IsFinal  bool   `json:"is_final,omitempty"` // Whether text is finalized
-	ClientID string `json:"client_id"`           // Client this response belongs to
-	Error    string `json:"error,omitempty"`     // Error message if any
+	ClientID string `json:"client_id"`          // Client this response belongs to
+	Error    string `json:"error,omitempty"`    // Error message if any
 }
 
-// NewSharedParakeetWorkerStreaming creates a streaming Parakeet worker
-func NewSharedParakeetWorkerStreaming(config ParakeetConfig) (*SharedParakeetWorkerStreaming, error) {
+// NewSharedParakeetWorker creates a streaming Parakeet worker
+func NewSharedParakeetWorker(config ParakeetConfig) (*SharedParakeetWorker, error) {
 	log := config.Logger.With("parakeet-streaming")
 
 	// Use streaming script
@@ -76,9 +76,8 @@ func NewSharedParakeetWorkerStreaming(config ParakeetConfig) (*SharedParakeetWor
 		if runtime.GOOS == "darwin" {
 			scriptPath = filepath.Join("scripts", "parakeet_worker_streaming.py")
 		} else {
-			// For now, fall back to mock on Linux
-			// TODO: Create streaming mock
-			scriptPath = filepath.Join("scripts", "parakeet_mock.py")
+			// Fall back to streaming mock on Linux for testing
+			scriptPath = filepath.Join("scripts", "parakeet_mock_streaming.py")
 		}
 	}
 
@@ -126,7 +125,7 @@ func NewSharedParakeetWorkerStreaming(config ParakeetConfig) (*SharedParakeetWor
 		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	worker := &SharedParakeetWorkerStreaming{
+	worker := &SharedParakeetWorker{
 		cmd:           cmd,
 		stdin:         stdin,
 		stdout:        bufio.NewReader(stdout),
@@ -146,7 +145,7 @@ func NewSharedParakeetWorkerStreaming(config ParakeetConfig) (*SharedParakeetWor
 }
 
 // start launches the Python subprocess
-func (w *SharedParakeetWorkerStreaming) start() error {
+func (w *SharedParakeetWorker) start() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -180,7 +179,7 @@ func (w *SharedParakeetWorkerStreaming) start() error {
 }
 
 // waitForReady tests the streaming protocol
-func (w *SharedParakeetWorkerStreaming) waitForReady() error {
+func (w *SharedParakeetWorker) waitForReady() error {
 	timeout := time.After(60 * time.Second)
 
 	// Test start_stream
@@ -237,7 +236,7 @@ func (w *SharedParakeetWorkerStreaming) waitForReady() error {
 }
 
 // monitorStderr logs stderr output
-func (w *SharedParakeetWorkerStreaming) monitorStderr() {
+func (w *SharedParakeetWorker) monitorStderr() {
 	scanner := bufio.NewScanner(w.stderr)
 	for scanner.Scan() {
 		w.log.Debug("Parakeet stderr: %s", scanner.Text())
@@ -245,7 +244,7 @@ func (w *SharedParakeetWorkerStreaming) monitorStderr() {
 }
 
 // monitorProcess waits for process exit
-func (w *SharedParakeetWorkerStreaming) monitorProcess() {
+func (w *SharedParakeetWorker) monitorProcess() {
 	err := w.cmd.Wait()
 	w.mu.Lock()
 	w.startErr = err
@@ -262,7 +261,7 @@ func (w *SharedParakeetWorkerStreaming) monitorProcess() {
 }
 
 // CreateClient creates a new client session for streaming
-func (w *SharedParakeetWorkerStreaming) CreateClient() string {
+func (w *SharedParakeetWorker) CreateClient() string {
 	clientID := uuid.New().String()
 
 	w.clientsMu.Lock()
@@ -277,7 +276,7 @@ func (w *SharedParakeetWorkerStreaming) CreateClient() string {
 }
 
 // ProcessAudio processes audio for a client (handles buffering and streaming)
-func (w *SharedParakeetWorkerStreaming) ProcessAudio(clientID string, samples []float32) (string, error) {
+func (w *SharedParakeetWorker) ProcessAudio(clientID string, samples []float32) (string, error) {
 	w.clientsMu.Lock()
 	client, exists := w.activeClients[clientID]
 	if !exists {
@@ -317,7 +316,7 @@ func (w *SharedParakeetWorkerStreaming) ProcessAudio(clientID string, samples []
 }
 
 // startClientStream starts a streaming context for a client
-func (w *SharedParakeetWorkerStreaming) startClientStream(clientID string) error {
+func (w *SharedParakeetWorker) startClientStream(clientID string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -347,7 +346,7 @@ func (w *SharedParakeetWorkerStreaming) startClientStream(clientID string) error
 }
 
 // addAudioToStream adds audio to an active stream
-func (w *SharedParakeetWorkerStreaming) addAudioToStream(clientID string, samples []float32) (string, bool, error) {
+func (w *SharedParakeetWorker) addAudioToStream(clientID string, samples []float32) (string, bool, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -379,7 +378,7 @@ func (w *SharedParakeetWorkerStreaming) addAudioToStream(clientID string, sample
 }
 
 // CloseClient ends a client's streaming session
-func (w *SharedParakeetWorkerStreaming) CloseClient(clientID string) error {
+func (w *SharedParakeetWorker) CloseClient(clientID string) error {
 	w.clientsMu.Lock()
 	client, exists := w.activeClients[clientID]
 	if !exists {
@@ -411,7 +410,7 @@ func (w *SharedParakeetWorkerStreaming) CloseClient(clientID string) error {
 }
 
 // Close shuts down the worker
-func (w *SharedParakeetWorkerStreaming) Close() error {
+func (w *SharedParakeetWorker) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -458,7 +457,7 @@ func (w *SharedParakeetWorkerStreaming) Close() error {
 
 // Transcribe implements the simple interface for compatibility
 // Creates a temporary client for one-shot transcription
-func (w *SharedParakeetWorkerStreaming) Transcribe(samples []float32) (string, error) {
+func (w *SharedParakeetWorker) Transcribe(samples []float32) (string, error) {
 	// For compatibility - creates a client, processes, and cleans up
 	clientID := w.CreateClient()
 	defer w.CloseClient(clientID)

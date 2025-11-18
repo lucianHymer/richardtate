@@ -14,6 +14,7 @@ import (
 // Flow: Raw Audio → RNNoise → VAD/Chunker → ASR (Whisper/Parakeet) → Results
 type TranscriptionPipeline struct {
 	asr        ASRTranscriber // ASR engine (Whisper or Parakeet)
+	engine     string         // Engine type: "whisper" or "parakeet"
 	rnnoise    *RNNoiseProcessor
 	chunker    *SmartChunker
 	resultChan chan TranscriptionResult
@@ -75,8 +76,15 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 	}
 	resultChan := make(chan TranscriptionResult, resultChanSize)
 
+	// Default engine to whisper if not specified
+	engine := config.Engine
+	if engine == "" {
+		engine = "whisper"
+	}
+
 	pipeline := &TranscriptionPipeline{
 		asr:        asr,
+		engine:     engine,
 		rnnoise:    rnnoise,
 		resultChan: resultChan,
 		active:     false,
@@ -100,7 +108,8 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 }
 
 // ProcessChunk processes an incoming audio chunk through the pipeline
-// Flow: Raw PCM → RNNoise → Chunker (with VAD) → [triggers transcription on silence]
+// Flow for Whisper: Raw PCM → RNNoise → Chunker (with VAD) → [triggers transcription on silence]
+// Flow for Parakeet: Raw PCM → RNNoise → Direct to ASR (Parakeet handles buffering internally)
 func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) error {
 	p.mu.RLock()
 	if !p.active {
@@ -117,15 +126,52 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 		denoisedBytes = audioData
 	}
 
-	// Step 2: Convert to int16 samples for chunker
+	// Step 2: Convert to int16 samples
 	samples := make([]int16, len(denoisedBytes)/2)
 	for i := 0; i < len(samples); i++ {
 		samples[i] = int16(denoisedBytes[i*2]) | int16(denoisedBytes[i*2+1])<<8
 	}
 
-	// Step 3: Process through smart chunker (includes VAD)
-	// The chunker will call transcribeChunk() when a chunk is ready
-	p.chunker.ProcessSamples(samples)
+	// Step 3: Route based on engine type
+	if p.engine == "parakeet" {
+		// For Parakeet streaming: bypass chunker and send directly to ASR
+		// Parakeet handles its own 1-second buffering internally
+
+		// Convert int16 samples to float32 for ASR
+		floatSamples := make([]float32, len(samples))
+		for i, sample := range samples {
+			floatSamples[i] = float32(sample) / 32768.0
+		}
+
+		// Transcribe directly (Parakeet returns text when it has enough audio)
+		text, err := p.asr.Transcribe(floatSamples)
+
+		// If we got text back, send it as a result
+		if text != "" {
+			result := TranscriptionResult{
+				Text:      text,
+				Timestamp: timestamp,
+				Error:     err,
+			}
+
+			select {
+			case p.resultChan <- result:
+				p.log.InfoWithFields("Parakeet streaming result", map[string]interface{}{
+					"text": text,
+				})
+			default:
+				p.log.Warn("Result dropped (channel full)")
+			}
+		}
+
+		if err != nil {
+			p.log.Error("Parakeet transcription error: %v", err)
+		}
+	} else {
+		// For Whisper: use traditional VAD/chunker approach
+		// The chunker will call transcribeChunk() when a chunk is ready
+		p.chunker.ProcessSamples(samples)
+	}
 
 	return nil
 }

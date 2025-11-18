@@ -24,9 +24,9 @@ echo ""
 echo "✅ Parakeet MLX dependencies installed successfully!"
 echo ""
 
-# Get absolute path to parakeet_worker.py
+# Get absolute path to parakeet_worker_streaming.py
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORKER_SCRIPT="$SCRIPT_DIR/parakeet_worker.py"
+WORKER_SCRIPT="$SCRIPT_DIR/parakeet_worker_streaming.py"
 
 echo "Add this to your server config:"
 echo ""
