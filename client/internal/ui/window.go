@@ -44,6 +44,9 @@ func NewWindow() *Window {
 	// Retain window to prevent deallocation
 	objc.Retain(&nsWindow)
 
+	// Don't release on close - we call Close() manually to destroy old windows
+	nsWindow.SetReleasedWhenClosed(false)
+
 	// Set dark background color
 	nsWindow.SetBackgroundColor(appkit.Color_ColorWithSRGBRedGreenBlueAlpha(0.1, 0.1, 0.1, 0.95))
 
@@ -113,4 +116,11 @@ func (w *Window) GetText() string {
 func (w *Window) Clear() {
 	w.text = ""
 	w.textField.SetStringValue("")
+}
+
+// Close releases the window resources
+func (w *Window) Close() {
+	if w.nsWindow.Ptr() != nil {
+		w.nsWindow.Close()
+	}
 }

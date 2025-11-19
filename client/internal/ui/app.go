@@ -45,6 +45,9 @@ func (a *App) GetWindow() *Window {
 
 // RecreateWindow destroys and recreates the preview window
 func (a *App) RecreateWindow() {
+	if a.window != nil {
+		a.window.Close()
+	}
 	a.window = NewWindow()
 }
 
