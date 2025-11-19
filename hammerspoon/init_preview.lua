@@ -77,7 +77,16 @@ function createPreviewWindow()
     ]])
 
     previewWindow:show()
-    -- Don't focus - we want it tooltip-like, not focus-stealing
+
+    -- Raise to top but don't steal focus
+    hs.timer.doAfter(0.1, function()
+        if previewWindow then
+            local win = previewWindow:hswindow()
+            if win then
+                win:raise()  -- Bring to top without focusing
+            end
+        end
+    end)
 end
 
 -- Update preview window with new text
