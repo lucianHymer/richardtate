@@ -134,75 +134,75 @@ function startRecording()
     -- Create preview window
     createPreviewWindow()
 
-    -- Send start command to daemon
-    hs.http.post(CLIENT_URL .. "/start", "", {["Content-Type"] = "application/json"}, function(status, body, headers)
-        if status == 200 then
-            print("Recording started successfully")
+    -- Send start command to daemon (synchronous)
+    print("Sending POST to:", CLIENT_URL .. "/start")
+    local status, body, headers = hs.http.post(CLIENT_URL .. "/start", "", {["Content-Type"] = "application/json"})
+    print("POST response - status:", status, "body:", body)
 
-            -- Create minimal recording indicator
-            local screen = hs.screen.mainScreen():frame()
-            indicator = hs.canvas.new({x = screen.x + screen.w - 220, y = 20, w = 200, h = 40})
-            indicator[1] = {
-                type = "rectangle",
-                action = "fill",
-                fillColor = {red = 1, green = 0, blue = 0, alpha = 0.5},
-                roundedRectRadii = {xRadius = 10, yRadius = 10}
-            }
-            indicator[2] = {
-                type = "text",
-                text = "🎙️ Recording...",
-                textSize = 16,
-                textColor = {white = 1, alpha = 1},
-                textAlignment = "center",
-                frame = {x = 0, y = 10, w = 200, h = 20}
-            }
-            indicator:show()
+    if status == 200 then
+        print("Recording started successfully")
 
-            -- Connect WebSocket for transcriptions
-            print("Creating WebSocket to:", WS_URL)
-            ws = hs.websocket.new(WS_URL, function(event, message)
-                print("WebSocket event:", event, "message:", message)
-                if event == "received" then
-                    local success, data = pcall(hs.json.decode, message)
-                    if success and data.chunk then
-                        print("Transcript chunk length:", string.len(data.chunk))
-                        -- Update preview with full text (replaces everything)
-                        updatePreview(data.chunk)
-                    else
-                        print("Failed to decode or no chunk in message")
-                    end
-                elseif event == "open" then
-                    print("WebSocket connected successfully")
-                elseif event == "closed" or event == "fail" then
-                    print("WebSocket closed/failed, event:", event)
+        -- Create minimal recording indicator
+        local screen = hs.screen.mainScreen():frame()
+        indicator = hs.canvas.new({x = screen.x + screen.w - 220, y = 20, w = 200, h = 40})
+        indicator[1] = {
+            type = "rectangle",
+            action = "fill",
+            fillColor = {red = 1, green = 0, blue = 0, alpha = 0.5},
+            roundedRectRadii = {xRadius = 10, yRadius = 10}
+        }
+        indicator[2] = {
+            type = "text",
+            text = "🎙️ Recording...",
+            textSize = 16,
+            textColor = {white = 1, alpha = 1},
+            textAlignment = "center",
+            frame = {x = 0, y = 10, w = 200, h = 20}
+        }
+        indicator:show()
 
-                    -- WebSocket closed by server (or failed) - time to insert final text
-                    if not recording then  -- Only if we're in the stopping phase
-                        finishRecording()
-                    end
+        -- Connect WebSocket for transcriptions
+        print("Creating WebSocket to:", WS_URL)
+        ws = hs.websocket.new(WS_URL, function(event, message)
+            print("WebSocket event:", event, "message:", message)
+            if event == "received" then
+                local success, data = pcall(hs.json.decode, message)
+                if success and data.chunk then
+                    print("Transcript chunk length:", string.len(data.chunk))
+                    -- Update preview with full text (replaces everything)
+                    updatePreview(data.chunk)
+                else
+                    print("Failed to decode or no chunk in message")
                 end
-            end)
+            elseif event == "open" then
+                print("WebSocket connected successfully")
+            elseif event == "closed" or event == "fail" then
+                print("WebSocket closed/failed, event:", event)
 
-            if not ws then
-                print("ERROR: Failed to create WebSocket object")
-            else
-                print("WebSocket object created, waiting for connection...")
+                -- WebSocket closed by server (or failed) - time to insert final text
+                if not recording then  -- Only if we're in the stopping phase
+                    finishRecording()
+                end
             end
+        end)
 
-            -- recording = true  -- Already set at the beginning
+        if not ws then
+            print("ERROR: Failed to create WebSocket object")
         else
-            print("Failed to start recording: " .. tostring(status))
-            hs.notify.new({title="Recording Failed", informativeText="Could not start recording. Is the daemon running?"}):send()
-
-            -- Reset flag on failure
-            recording = false
-
-            if previewWindow then
-                previewWindow:delete()
-                previewWindow = nil
-            end
+            print("WebSocket object created, waiting for connection...")
         end
-    end)
+    else
+        print("Failed to start recording: " .. tostring(status))
+        hs.notify.new({title="Recording Failed", informativeText="Could not start recording. Is the daemon running?"}):send()
+
+        -- Reset flag on failure
+        recording = false
+
+        if previewWindow then
+            previewWindow:delete()
+            previewWindow = nil
+        end
+    end
 end
 
 -- Finish recording - called when WebSocket closes (server is done)
@@ -243,31 +243,32 @@ function stopRecording()
     -- Set recording flag immediately to prevent double-stops
     recording = false
 
-    -- Send stop command to daemon
-    hs.http.post(CLIENT_URL .. "/stop", "", {["Content-Type"] = "application/json"}, function(status, body, headers)
-        if status == 200 then
-            print("Recording stopped successfully - waiting for server to close WebSocket")
+    -- Send stop command to daemon (synchronous)
+    print("Sending POST to:", CLIENT_URL .. "/stop")
+    local status, body, headers = hs.http.post(CLIENT_URL .. "/stop", "", {["Content-Type"] = "application/json"})
+    print("POST response - status:", status, "body:", body)
 
-            -- Hide indicator immediately
-            if indicator then
-                indicator:delete()
-                indicator = nil
-            end
+    if status == 200 then
+        print("Recording stopped successfully - waiting for server to close WebSocket")
 
-            -- Update preview window title to show it's finalizing
-            if previewWindow then
-                previewWindow:windowTitle("Transcription Preview (Finalizing...)")
-            end
-
-            -- Server will send final updates and then close the WebSocket
-            -- finishRecording() will be called when WebSocket closes/fails
-
-        else
-            print("Failed to stop recording: " .. tostring(status))
-            -- Reset flag back to true on failure since we're still recording
-            recording = true
+        -- Hide indicator immediately
+        if indicator then
+            indicator:delete()
+            indicator = nil
         end
-    end)
+
+        -- Update preview window title to show it's finalizing
+        if previewWindow then
+            previewWindow:windowTitle("Transcription Preview (Finalizing...)")
+        end
+
+        -- Server will send final updates and then close the WebSocket
+        -- finishRecording() will be called when WebSocket closes/fails
+    else
+        print("Failed to stop recording: " .. tostring(status))
+        -- Reset flag back to true on failure since we're still recording
+        recording = true
+    end
 end
 
 -- Toggle recording with Ctrl+N
