@@ -187,7 +187,7 @@ func (w *SharedParakeetWorker) waitForReady() error {
 		Command:     "start_stream",
 		ClientID:    "test-" + uuid.New().String(),
 		ContextSize: []int{256, 256},
-		Depth:       1,
+		Depth:       2, // depth=2 for better quality (first two encoder layers match exactly)
 	}
 
 	encoder := json.NewEncoder(w.stdin)
@@ -324,7 +324,7 @@ func (w *SharedParakeetWorker) startClientStream(clientID string) error {
 		Command:     "start_stream",
 		ClientID:    clientID,
 		ContextSize: []int{256, 256},
-		Depth:       1,
+		Depth:       2, // depth=2 for better quality (first two encoder layers match exactly)
 	}
 
 	encoder := json.NewEncoder(w.stdin)

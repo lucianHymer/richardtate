@@ -142,9 +142,11 @@ func (u *UI) saveCalibrationThreshold(threshold float64) error {
 
 // toggleRecording handles hotkey press
 func (u *UI) toggleRecording() {
+	u.logger.Info("Hotkey pressed")
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
+	u.logger.Info("Recording state: %v", u.recording)
 	if u.recording {
 		u.stopRecording()
 	} else {
@@ -154,27 +156,41 @@ func (u *UI) toggleRecording() {
 
 func (u *UI) startRecording() {
 	window := u.app.GetWindow()
+	if window == nil {
+		u.logger.Error("Window not initialized")
+		return
+	}
 
-	// Clear previous text
+	u.logger.Info("startRecording called - clearing window")
+
+	// Clear and show window (already on main thread from toggleRecording)
 	window.Clear()
-
-	// Show window
+	u.logger.Info("Window cleared - calling Show()")
 	window.Show()
+	u.logger.Info("Window.Show() called")
 
 	// Call handler
 	if u.onStart != nil {
+		u.logger.Info("Calling onStart handler")
 		if err := u.onStart(); err != nil {
 			u.logger.Error("Recording start failed: %v", err)
 			window.Hide()
 			return
 		}
+		u.logger.Info("onStart handler completed successfully")
 	}
 
 	u.recording = true
+	u.logger.Info("Recording started - recording state set to true")
 }
 
 func (u *UI) stopRecording() {
 	window := u.app.GetWindow()
+	if window == nil {
+		u.logger.Error("Window not initialized")
+		u.recording = false
+		return
+	}
 
 	// Get accumulated text
 	text := window.GetText()
@@ -192,17 +208,36 @@ func (u *UI) stopRecording() {
 		}()
 	}
 
-	// Hide window
+	// Hide window (already on main thread from toggleRecording)
 	window.Hide()
 
 	u.recording = false
 }
 
+// SetTranscription replaces the current transcription text (thread-safe)
+// Used for streaming where each update contains the full accumulated text
+func (u *UI) SetTranscription(text string) {
+	// Dispatch to main thread for UI update
+	Dispatch(func() {
+		window := u.app.GetWindow()
+		if window != nil {
+			u.logger.Debug("Setting transcription text: %d chars", len(text))
+			window.SetText(text)
+		} else {
+			u.logger.Error("SetTranscription called but window is nil")
+		}
+	})
+}
+
 // AppendTranscription adds a transcription chunk (thread-safe)
+// Used for incremental transcription where each chunk is new text
 func (u *UI) AppendTranscription(text string) {
 	// Dispatch to main thread for UI update
 	Dispatch(func() {
-		u.app.GetWindow().AppendText(text)
+		window := u.app.GetWindow()
+		if window != nil {
+			window.AppendText(text)
+		}
 	})
 }
 

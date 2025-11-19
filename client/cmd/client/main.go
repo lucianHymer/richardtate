@@ -259,9 +259,9 @@ func handleDataChannelMessage(msg *protocol.Message) {
 		}
 		fmt.Printf("[partial] %s\n", transcript.Text)
 
-		// Update UI
+		// Update UI - partial transcripts REPLACE the text (streaming sends full accumulated text)
 		if globalUI != nil {
-			globalUI.AppendTranscription(transcript.Text)
+			globalUI.SetTranscription(transcript.Text)
 		}
 
 	case protocol.MessageTypeTranscriptFinal:
@@ -272,9 +272,12 @@ func handleDataChannelMessage(msg *protocol.Message) {
 		}
 		fmt.Printf("%s\n", transcript.Text)
 
-		// Update UI
+		// Update UI - final transcript REPLACES the text (it's the complete text for this chunk)
 		if globalUI != nil {
-			globalUI.AppendTranscription(transcript.Text)
+			messageLog.Debug("Calling SetTranscription with %d chars", len(transcript.Text))
+			globalUI.SetTranscription(transcript.Text)
+		} else {
+			messageLog.Error("globalUI is nil!")
 		}
 
 		// Log chunk to debug log
@@ -282,14 +285,17 @@ func handleDataChannelMessage(msg *protocol.Message) {
 			messageLog.Error("Failed to log chunk to debug log: %v", err)
 		}
 
-		// Track session chunks
+		// Track session chunks - for final transcripts, we need to track only the NEW text
+		// Since Parakeet sends accumulated text, we track the full final text as one chunk
 		sessionMu.Lock()
 		if sessionRecording {
-			sessionChunks = append(sessionChunks, transcript.Text)
+			// Clear previous chunks and set to just this final text
+			// (The final contains all accumulated text from the stream)
+			sessionChunks = []string{transcript.Text}
 		}
 		sessionMu.Unlock()
 
 	default:
-		messageLog.Debug("Received message type: %s", string(msg.Type))
+		messageLog.Info("Received unknown message type: %s", string(msg.Type))
 	}
 }

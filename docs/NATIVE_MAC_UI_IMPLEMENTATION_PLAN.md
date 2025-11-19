@@ -46,14 +46,26 @@ The initial code from Linux had several issues when building on macOS with Darwi
 - ✅ Client starts and shows native UI
 - ✅ Hotkeys registered (Ctrl+N, Ctrl+Alt+C)
 - ✅ Connection retry logic works
-- 🔄 Testing recording/transcription flow
+- ✅ Transcription working (Parakeet streaming with depth=2)
+- ✅ Text displays in preview window (sea foam green on dark background)
+- ✅ Text wrapping works
+- ✅ Paste to clipboard works
+- ⚠️ **Preview window unreliable** - Shows first time after app start, then intermittently fails to show on subsequent recordings
+
+### Known Issues
+
+1. **Preview window visibility unreliable** - The window shows correctly the first time after app launch, but on subsequent Ctrl+N presses it often fails to appear even though transcription is running. Logs show `Window.Show()` is being called but the window doesn't become visible. Tried multiple approaches:
+   - `OrderFrontRegardless()` - doesn't work after `OrderOut()`
+   - `SetIsVisible(true/false)` - same issue
+   - `MakeKeyAndOrderFront()` - same issue
+   - Various Dispatch/main thread approaches - same issue
+
+   This appears to be a DarwinKit or macOS window management issue that needs further investigation.
 
 ### What Still Needs Testing
 
-1. **Full recording flow** - Press Ctrl+N, speak, press Ctrl+N, verify transcription and paste
-2. **Calibration wizard** - Press Ctrl+Alt+C, complete 3-step wizard
-3. **Preview window** - Verify it doesn't steal focus
-4. **Paste** - Verify text goes to clipboard and Cmd+V is simulated
+1. **Calibration wizard** - Press Ctrl+Alt+C, complete 3-step wizard
+2. **Fix preview window reliability** - Investigate why window fails to show after first use
 
 ---
 

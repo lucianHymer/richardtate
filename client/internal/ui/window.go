@@ -8,18 +8,17 @@ import (
 
 // Window is a floating transcription preview
 type Window struct {
-	nsWindow   appkit.Window
-	textView   appkit.TextView
-	scrollView appkit.ScrollView
-	text       string // Accumulated transcription
+	nsWindow  appkit.Window
+	textField appkit.TextField
+	text      string // Accumulated transcription
 }
 
 // NewWindow creates the floating preview window
 func NewWindow() *Window {
-	// Window frame: 400x300, will be centered
+	// Window frame: 400x200, will be centered
 	frame := foundation.Rect{
 		Origin: foundation.Point{X: 0, Y: 0},
-		Size:   foundation.Size{Width: 400, Height: 300},
+		Size:   foundation.Size{Width: 400, Height: 200},
 	}
 
 	// Window style: title bar, closable, resizable
@@ -45,38 +44,39 @@ func NewWindow() *Window {
 	// Retain window to prevent deallocation
 	objc.Retain(&nsWindow)
 
-	// Create text view
-	textView := appkit.NewTextView()
-	textView.SetFrame(frame)
-	textView.SetEditable(false)
-	textView.SetString("Ready to transcribe...")
+	// Set dark background color
+	nsWindow.SetBackgroundColor(appkit.Color_ColorWithSRGBRedGreenBlueAlpha(0.1, 0.1, 0.1, 0.95))
 
-	// Set text view appearance
-	textView.SetBackgroundColor(appkit.Color_WhiteColor())
+	// Create a wrapping label using TextField_WrappingLabelWithString
+	// This automatically configures word wrapping
+	textField := appkit.TextField_WrappingLabelWithString("")
+	textField.SetFrame(foundation.Rect{
+		Origin: foundation.Point{X: 10, Y: 10},
+		Size:   foundation.Size{Width: 380, Height: 180},
+	})
+	textField.SetEditable(false)
+	textField.SetSelectable(false)
+	textField.SetBordered(false)
+	textField.SetDrawsBackground(false)
 
 	// Configure font
 	font := appkit.Font_SystemFontOfSize(14)
-	textView.SetFont(font)
+	textField.SetFont(font)
 
-	// Wrap in scroll view
-	scrollView := appkit.NewScrollView()
-	scrollView.SetFrame(frame)
-	scrollView.SetDocumentView(textView)
-	scrollView.SetHasVerticalScroller(true)
-	scrollView.SetAutohidesScrollers(true)
+	// Set sea foam green text color
+	textField.SetTextColor(appkit.Color_ColorWithSRGBRedGreenBlueAlpha(0.4, 0.95, 0.7, 1.0))
 
-	nsWindow.SetContentView(scrollView)
+	nsWindow.ContentView().AddSubview(textField)
 
 	return &Window{
-		nsWindow:   nsWindow,
-		textView:   textView,
-		scrollView: scrollView,
+		nsWindow:  nsWindow,
+		textField: textField,
 	}
 }
 
 // Show displays the window without stealing focus
 func (w *Window) Show() {
-	w.nsWindow.OrderFrontRegardless() // Show without activating
+	w.nsWindow.MakeKeyAndOrderFront(nil)
 }
 
 // Hide hides the window
@@ -87,13 +87,12 @@ func (w *Window) Hide() {
 // SetText updates the displayed text
 func (w *Window) SetText(text string) {
 	w.text = text
-	w.textView.SetString(text)
-
-	// Scroll to bottom to show latest text
-	length := len(text)
-	if length > 0 {
-		w.textView.ScrollRangeToVisible(foundation.Range{Location: uint64(length), Length: 0})
+	// Limit display to last 500 characters to prevent overflow
+	displayText := text
+	if len(displayText) > 500 {
+		displayText = "..." + displayText[len(displayText)-497:]
 	}
+	w.textField.SetStringValue(displayText)
 }
 
 // AppendText adds text to the display
@@ -113,5 +112,5 @@ func (w *Window) GetText() string {
 // Clear resets the text
 func (w *Window) Clear() {
 	w.text = ""
-	w.textView.SetString("")
+	w.textField.SetStringValue("")
 }
