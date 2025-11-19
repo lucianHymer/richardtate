@@ -17,6 +17,7 @@ type TranscriptionPipeline struct {
 	engine     string         // Engine type: "whisper" or "parakeet"
 	rnnoise    *RNNoiseProcessor
 	chunker    *SmartChunker
+	vad        *VoiceActivityDetector // VAD for Parakeet gating (Whisper uses chunker's VAD)
 	resultChan chan TranscriptionResult
 	mu         sync.RWMutex
 	active     bool
@@ -92,7 +93,17 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		log:        log,
 	}
 
-	// Create smart chunker with VAD
+	// Create VAD for Parakeet gating (Whisper uses chunker's internal VAD)
+	if engine == "parakeet" {
+		pipeline.vad = NewVAD(VADConfig{
+			EnergyThreshold:    config.VADEnergyThreshold,
+			SilenceThresholdMs: int(config.SilenceThreshold.Milliseconds()),
+			SampleRate:         16000,
+		})
+		log.Info("VAD initialized for Parakeet gating with threshold %.1f", config.VADEnergyThreshold)
+	}
+
+	// Create smart chunker with VAD (used by Whisper, also available for stats)
 	pipeline.chunker = NewSmartChunker(SmartChunkerConfig{
 		SampleRate:             16000,
 		SilenceThreshold:       config.SilenceThreshold,
@@ -134,8 +145,23 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 
 	// Step 3: Route based on engine type
 	if p.engine == "parakeet" {
-		// For Parakeet streaming: bypass chunker and send directly to ASR
-		// Parakeet handles its own 1-second buffering internally
+		// For Parakeet streaming: use VAD to gate chunks before sending to ASR
+		// Only send chunks that contain speech to avoid unnecessary refreshes
+
+		// Process samples through VAD to detect speech
+		frameSize := 160 // 10ms at 16kHz
+		hasSpeech := false
+		for offset := 0; offset+frameSize <= len(samples); offset += frameSize {
+			frame := samples[offset : offset+frameSize]
+			if p.vad.ProcessFrame(frame) {
+				hasSpeech = true
+			}
+		}
+
+		// Skip this chunk if no speech detected
+		if !hasSpeech {
+			return nil
+		}
 
 		// Convert int16 samples to float32 for ASR
 		floatSamples := make([]float32, len(samples))
@@ -252,6 +278,11 @@ func (p *TranscriptionPipeline) Start() error {
 	// Reset components
 	p.chunker.Reset()
 	p.rnnoise.Reset()
+
+	// Reset VAD for Parakeet
+	if p.vad != nil {
+		p.vad.Reset()
+	}
 
 	return nil
 }
