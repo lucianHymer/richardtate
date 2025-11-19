@@ -12,12 +12,12 @@ local WS_URL = "ws://localhost:8081/transcriptions"
 
 -- Create preview window (non-interactive, just displays text)
 function createPreviewWindow()
-    -- Position it nicely on screen
+    -- Center it on screen
     local screen = hs.screen.mainScreen():frame()
     local windowWidth = 600
     local windowHeight = 400
-    local windowX = screen.x + screen.w - windowWidth - 20  -- Top right with margin
-    local windowY = screen.y + 50
+    local windowX = screen.x + (screen.w - windowWidth) / 2
+    local windowY = screen.y + (screen.h - windowHeight) / 2
 
     previewWindow = hs.webview.new({
         x = windowX,
@@ -92,7 +92,6 @@ end
 -- Update preview window with new text
 function updatePreview(text)
     if previewWindow then
-        print("Updating preview with text length:", string.len(text))
 
         -- Escape the text for JavaScript string literal
         local escapedText = text:gsub("\\", "\\\\")
@@ -125,8 +124,6 @@ end
 
 -- Start recording function
 function startRecording()
-    print("Starting recording...")
-
     -- Set recording flag immediately to prevent double-starts
     recording = true
 
@@ -134,12 +131,9 @@ function startRecording()
     createPreviewWindow()
 
     -- Send start command to daemon (synchronous)
-    print("Sending POST to:", CLIENT_URL .. "/start")
     local status, body, headers = hs.http.post(CLIENT_URL .. "/start", "", {["Content-Type"] = "application/json"})
-    print("POST response - status:", status, "body:", body)
 
     if status == 200 then
-        print("Recording started successfully")
 
         -- Create minimal recording indicator
         local screen = hs.screen.mainScreen():frame()
@@ -161,23 +155,17 @@ function startRecording()
         indicator:show()
 
         -- Connect WebSocket for transcriptions
-        print("Creating WebSocket to:", WS_URL)
         ws = hs.websocket.new(WS_URL, function(event, message)
-            print("WebSocket event:", event, "message:", message)
             if event == "received" then
                 local success, data = pcall(hs.json.decode, message)
                 if success and data.chunk then
-                    print("Transcript chunk length:", string.len(data.chunk))
                     -- Update preview with full text (replaces everything)
                     updatePreview(data.chunk)
-                else
-                    print("Failed to decode or no chunk in message")
                 end
             elseif event == "open" then
-                print("WebSocket connected successfully")
+                print("WebSocket connected")
             elseif event == "closed" or event == "fail" then
-                print("WebSocket closed/failed, event:", event)
-
+                print("WebSocket closed")
                 -- WebSocket closed by server (or failed) - time to insert final text
                 if not recording then  -- Only if we're in the stopping phase
                     finishRecording()
@@ -186,9 +174,7 @@ function startRecording()
         end)
 
         if not ws then
-            print("ERROR: Failed to create WebSocket object")
-        else
-            print("WebSocket object created, waiting for connection...")
+            print("ERROR: Failed to create WebSocket")
         end
     else
         print("Failed to start recording: " .. tostring(status))
@@ -206,17 +192,11 @@ end
 
 -- Finish recording - called when WebSocket closes (server is done)
 function finishRecording()
-    print("Finishing recording - inserting final text")
-
     -- Get final text from preview and insert
     if previewWindow then
-        print("Getting final text from preview window")
         previewWindow:evaluateJavaScript("document.getElementById('preview').textContent", function(finalText)
-            print("Final text retrieved:", finalText and string.len(finalText) or "nil")
-
             -- Insert the final text at cursor
             if finalText and finalText ~= "Listening..." and finalText ~= "" then
-                print("Inserting final text...")
                 hs.eventtap.keyStrokes(finalText)
             end
 
@@ -224,11 +204,8 @@ function finishRecording()
             if previewWindow then
                 previewWindow:delete()
                 previewWindow = nil
-                print("Preview window closed")
             end
         end)
-    else
-        print("No preview window to close")
     end
 
     -- Clean up WebSocket reference
@@ -237,18 +214,13 @@ end
 
 -- Stop recording function
 function stopRecording()
-    print("Stopping recording...")
-
     -- Set recording flag immediately to prevent double-stops
     recording = false
 
     -- Send stop command to daemon (synchronous)
-    print("Sending POST to:", CLIENT_URL .. "/stop")
     local status, body, headers = hs.http.post(CLIENT_URL .. "/stop", "", {["Content-Type"] = "application/json"})
-    print("POST response - status:", status, "body:", body)
 
     if status == 200 then
-        print("Recording stopped successfully - waiting for server to close WebSocket")
 
         -- Hide indicator immediately
         if indicator then
