@@ -1,16 +1,20 @@
 module github.com/lucianHymer/streaming-transcription/client
 
-go 1.23
+go 1.24
+
+toolchain go1.24.9
 
 require (
+	github.com/gen2brain/malgo v0.11.24
 	github.com/gorilla/websocket v1.5.3
-	github.com/pion/webrtc/v4 v4.1.6
 	github.com/lucianHymer/streaming-transcription/shared v0.0.0-00010101000000-000000000000
+	github.com/pion/webrtc/v4 v4.1.6
+	github.com/progrium/darwinkit v0.5.0
+	golang.design/x/clipboard v0.7.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	github.com/gen2brain/malgo v0.11.24 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v3 v3.0.7 // indirect
@@ -29,8 +33,11 @@ require (
 	github.com/pion/turn/v4 v4.1.1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.33.0 // indirect
+	golang.org/x/exp/shiny v0.0.0-20250606033433-dcc06ee1d476 // indirect
+	golang.org/x/image v0.28.0 // indirect
+	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
 )
 
 replace github.com/lucianHymer/streaming-transcription/shared => ../shared
