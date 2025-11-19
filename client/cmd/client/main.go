@@ -100,35 +100,59 @@ func main() {
 		log.Info("Audio sending goroutine stopped")
 	}()
 
-	// Connect to server in background
+	// Connect to server in background with retry logic
 	go func() {
-		log.Info("Connecting to server...")
-		if err := webrtcClient.Connect(); err != nil {
-			log.Error("Failed to connect to server: %v", err)
-			return
-		}
+		retryDelay := 1 * time.Second
+		maxRetryDelay := 30 * time.Second
 
-		// Wait for connection to establish
-		log.Info("Waiting for DataChannel to open...")
-		for i := 0; i < 100; i++ {
-			if webrtcClient.IsConnected() {
-				break
+		for {
+			log.Info("Connecting to server...")
+			if err := webrtcClient.Connect(); err != nil {
+				log.Error("Failed to connect to server: %v (retrying in %v)", err, retryDelay)
+				time.Sleep(retryDelay)
+				// Exponential backoff
+				retryDelay *= 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+				continue
 			}
-			time.Sleep(100 * time.Millisecond)
-		}
 
-		if !webrtcClient.IsConnected() {
-			log.Error("Failed to establish DataChannel connection within timeout")
-			return
-		}
+			// Wait for connection to establish
+			log.Info("Waiting for DataChannel to open...")
+			connected := false
+			for i := 0; i < 100; i++ {
+				if webrtcClient.IsConnected() {
+					connected = true
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
 
-		log.Info("DataChannel connected!")
+			if !connected {
+				log.Error("Failed to establish DataChannel connection within timeout (retrying in %v)", retryDelay)
+				time.Sleep(retryDelay)
+				retryDelay *= 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+				continue
+			}
 
-		// Send a test ping
-		if err := webrtcClient.SendPing(); err != nil {
-			log.Error("Failed to send ping: %v", err)
-		} else {
-			log.Info("Ping sent successfully")
+			log.Info("DataChannel connected!")
+
+			// Reset retry delay on successful connection
+			retryDelay = 1 * time.Second
+
+			// Send a test ping
+			if err := webrtcClient.SendPing(); err != nil {
+				log.Error("Failed to send ping: %v", err)
+			} else {
+				log.Info("Ping sent successfully")
+			}
+
+			// Connection established, exit retry loop
+			break
 		}
 	}()
 

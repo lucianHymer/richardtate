@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/binary"
 	"math"
 	"sync"
 	"time"
@@ -16,8 +17,9 @@ type UI struct {
 	recording   bool
 	mu          sync.Mutex
 
-	config *config.Config
-	logger *logger.ContextLogger
+	config     *config.Config
+	logger     *logger.ContextLogger
+	baseLogger *logger.Logger
 
 	// Callbacks
 	onStart func() error
@@ -27,8 +29,9 @@ type UI struct {
 // New creates a new UI instance
 func New(cfg *config.Config, log *logger.Logger) *UI {
 	return &UI{
-		config: cfg,
-		logger: log.With("ui"),
+		config:     cfg,
+		logger:     log.With("ui"),
+		baseLogger: log,
 	}
 }
 
@@ -54,18 +57,17 @@ func (u *UI) Run() {
 		panic("Failed to initialize clipboard: " + err.Error())
 	}
 
-	// Create app
+	// Create app with initialization callback
 	u.app = NewApp()
 
-	// Set up calibration handlers
-	u.app.GetCalibration().SetHandlers(
+	// Set up hotkey handlers (these are stored on App, not windows)
+	u.app.SetHandlers(u.toggleRecording, u.showCalibration)
+
+	// Set calibration handlers to be called after windows are created
+	u.app.SetCalibrationHandlers(
 		u.recordForCalibration,
 		u.saveCalibrationThreshold,
-		nil,
 	)
-
-	// Set up hotkey handlers
-	u.app.SetHandlers(u.toggleRecording, u.showCalibration)
 
 	u.app.Run() // Blocks forever
 }
@@ -77,7 +79,7 @@ func (u *UI) showCalibration() {
 
 // recordForCalibration captures audio and returns energy stats
 func (u *UI) recordForCalibration(duration time.Duration) *AudioStats {
-	capturer, err := audio.New(20, u.config.Audio.DeviceName, u.logger.Logger)
+	capturer, err := audio.New(20, u.config.Audio.DeviceName, u.baseLogger)
 	if err != nil {
 		u.logger.Error("Failed to create audio capturer: %v", err)
 		return nil
@@ -88,7 +90,9 @@ func (u *UI) recordForCalibration(duration time.Duration) *AudioStats {
 
 	go func() {
 		for chunk := range capturer.Chunks() {
-			energy := calculateEnergy(chunk.Data)
+			// Convert bytes to int16 samples for energy calculation
+			samples := bytesToInt16(chunk.Data)
+			energy := calculateEnergy(samples)
 			energies = append(energies, energy)
 		}
 		close(done)
@@ -102,6 +106,15 @@ func (u *UI) recordForCalibration(duration time.Duration) *AudioStats {
 	return CalculateAudioStats(energies)
 }
 
+// bytesToInt16 converts a byte slice to int16 samples (little-endian)
+func bytesToInt16(data []byte) []int16 {
+	samples := make([]int16, len(data)/2)
+	for i := 0; i < len(samples); i++ {
+		samples[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
+	}
+	return samples
+}
+
 // calculateEnergy computes RMS energy of audio samples
 func calculateEnergy(samples []int16) float64 {
 	var sum float64
@@ -113,7 +126,7 @@ func calculateEnergy(samples []int16) float64 {
 
 // saveCalibrationThreshold saves the threshold to config
 func (u *UI) saveCalibrationThreshold(threshold float64) error {
-	err := config.UpdateVADThreshold(u.config.FilePath(), threshold)
+	err := config.UpdateVADThreshold(u.config.GetFilePath(), threshold)
 	if err != nil {
 		return err
 	}

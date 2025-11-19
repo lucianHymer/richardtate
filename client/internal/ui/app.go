@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"time"
+
+	"github.com/progrium/darwinkit/dispatch"
 	"github.com/progrium/darwinkit/macos"
 	"github.com/progrium/darwinkit/macos/appkit"
-	"github.com/progrium/darwinkit/objc"
 )
 
 // App manages the macOS application lifecycle
@@ -12,6 +14,10 @@ type App struct {
 	calibration   *CalibrationWindow
 	onToggle      func() // Called when Ctrl+N pressed
 	onCalibration func() // Called when Ctrl+Alt+C pressed
+
+	// Calibration handlers (stored until windows are created)
+	calibrationRecordHandler func(time.Duration) *AudioStats
+	calibrationSaveHandler   func(float64) error
 }
 
 // NewApp creates a new App instance
@@ -23,6 +29,13 @@ func NewApp() *App {
 func (a *App) SetHandlers(onToggle, onCalibration func()) {
 	a.onToggle = onToggle
 	a.onCalibration = onCalibration
+}
+
+// SetCalibrationHandlers sets the calibration window handlers
+// These are stored and applied when the windows are created in Run()
+func (a *App) SetCalibrationHandlers(onRecord func(time.Duration) *AudioStats, onSave func(float64) error) {
+	a.calibrationRecordHandler = onRecord
+	a.calibrationSaveHandler = onSave
 }
 
 // GetWindow returns the preview window
@@ -47,6 +60,15 @@ func (a *App) Run() {
 		// Initialize calibration window
 		a.calibration = NewCalibrationWindow()
 
+		// Apply calibration handlers now that window exists
+		if a.calibrationRecordHandler != nil || a.calibrationSaveHandler != nil {
+			a.calibration.SetHandlers(
+				a.calibrationRecordHandler,
+				a.calibrationSaveHandler,
+				nil,
+			)
+		}
+
 		// Register global hotkeys
 		RegisterHotkeys(a.onToggle, a.onCalibration)
 
@@ -59,5 +81,5 @@ func (a *App) Run() {
 
 // Dispatch runs a function on the main thread (for UI updates from goroutines)
 func Dispatch(fn func()) {
-	objc.DispatchAsync(fn)
+	dispatch.MainQueue().DispatchAsync(fn)
 }

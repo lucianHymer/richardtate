@@ -92,7 +92,7 @@ func (w *Window) SetText(text string) {
 	// Scroll to bottom to show latest text
 	length := len(text)
 	if length > 0 {
-		w.textView.ScrollRangeToVisible(foundation.Range{Location: uint(length), Length: 0})
+		w.textView.ScrollRangeToVisible(foundation.Range{Location: uint64(length), Length: 0})
 	}
 }
 

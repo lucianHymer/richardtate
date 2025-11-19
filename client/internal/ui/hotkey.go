@@ -10,7 +10,7 @@ package ui
 extern void goHotkeyCallback(int id);
 
 // Carbon Event handler for hotkeys
-OSStatus hotkeyHandler(EventHandlerCallRef nextHandler, EventRef event, void *userData) {
+static OSStatus hotkeyHandler(EventHandlerCallRef nextHandler, EventRef event, void *userData) {
     EventHotKeyID hotKeyID;
     GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, NULL, sizeof(hotKeyID), NULL, &hotKeyID);
     goHotkeyCallback(hotKeyID.id);
@@ -18,14 +18,14 @@ OSStatus hotkeyHandler(EventHandlerCallRef nextHandler, EventRef event, void *us
 }
 
 // Register a global hotkey with Carbon Event Manager
-void registerHotkey(int keyCode, int modifiers, int id) {
+static void registerHotkey(int keyCode, int modifiers, int id) {
     EventHotKeyID hotKeyID = {'htky', id};
     EventHotKeyRef hotKeyRef;
     RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef);
 }
 
 // Install the event handler for hotkey events
-void installHotkeyHandler() {
+static void installHotkeyHandler() {
     EventTypeSpec eventType = {kEventClassKeyboard, kEventHotKeyPressed};
     InstallApplicationEventHandler(&hotkeyHandler, 1, &eventType, NULL, NULL);
 }

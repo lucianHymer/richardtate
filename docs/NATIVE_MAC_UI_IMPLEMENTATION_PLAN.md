@@ -1,68 +1,63 @@
 # Native macOS UI Implementation Plan
 
-**Status**: Implementation Complete - Ready for Mac Testing
+**Status**: Mac Build Fixes Complete - Ready for Testing
 **Target**: Replace Hammerspoon dependency with native Go/macOS UI
 **Estimated Effort**: 4-6 days
 
 ---
 
-## Mac Handoff Notes
+## Mac Build Session Notes (2025-11-19)
 
-### What's Been Done (Linux)
-All code has been written and dependencies resolved. Cannot build/test on Linux due to macOS-specific CGO.
+### Build Issues Fixed
 
-**Files Created** (`client/internal/ui/`):
-- `app.go` - DarwinKit NSApplication lifecycle
-- `window.go` - Floating preview window
-- `hotkey.go` - Carbon Events CGO for global hotkeys
-- `paste.go` - Clipboard + Cmd+V simulation
-- `permissions.go` - Accessibility permission check/prompt
-- `calibration.go` - 3-step wizard with button handlers
-- `ui.go` - Public interface
+The initial code from Linux had several issues when building on macOS with DarwinKit:
 
-**Files Modified**:
-- `client/go.mod` - Added DarwinKit v0.5.0 and clipboard v0.7.1
-- `client/cmd/client/main.go` - Integrated UI, removed API server
-- `go.work` - Updated to go 1.24
+1. **`objc.DispatchAsync` undefined** - Changed to `dispatch.MainQueue().DispatchAsync()` (correct DarwinKit API)
 
-**Files Deleted**:
-- `hammerspoon/` - Entire directory
-- `client/internal/api/` - API server package
-- `client/internal/calibrate/` - CLI calibration package
+2. **`u.logger.Logger` undefined** - Added `baseLogger` field to UI struct to store the base logger for `audio.New()`
 
-### What Needs Testing on Mac
+3. **`chunk.Data` []byte vs []int16 mismatch** - Added `bytesToInt16()` helper function to convert audio bytes to samples
 
-1. **Build the client**:
-   ```bash
-   cd /workspace/project/client
-   go build -o client ./cmd/client
-   ```
+4. **`u.config.FilePath()` undefined** - Added `GetFilePath()` method to the Config struct
 
-2. **Test accessibility permissions flow** - First run should prompt for permissions
+5. **`uint` vs `uint64` type mismatch** - Changed `uint(length)` to `uint64(length)` for `foundation.Range`
 
-3. **Test hotkeys**:
-   - Ctrl+N - Toggle recording
-   - Ctrl+Alt+C - Open calibration wizard
+6. **Duplicate symbol linker errors** - Added `static` keyword to all C functions in CGO code blocks (hotkey.go, paste.go, permissions.go) to make them file-local
 
-4. **Test preview window** - Should show without stealing focus
+7. **Nil pointer crash on calibration handlers** - Calibration window is created inside `macos.RunApp` callback, so handlers need to be stored on App and applied after window creation
 
-5. **Test paste** - Text should go to clipboard and Cmd+V simulated
+8. **Connection retry logic missing** - Client now retries connecting to server with exponential backoff (1s → 2s → 4s → ... → 30s max) instead of giving up after first failure
 
-6. **Test calibration wizard** - 3-step flow with clickable buttons
+### Files Modified on Mac
 
-### Potential Issues to Watch For
+- `client/internal/ui/app.go` - Fixed dispatch import, added SetCalibrationHandlers, apply handlers in Run callback
+- `client/internal/ui/ui.go` - Added baseLogger field, bytesToInt16 helper, use GetFilePath
+- `client/internal/ui/window.go` - Fixed uint64 type
+- `client/internal/ui/hotkey.go` - Added static to C functions
+- `client/internal/ui/paste.go` - Added static to C functions
+- `client/internal/ui/permissions.go` - Added static to C functions
+- `client/internal/config/config.go` - Added GetFilePath() method
+- `client/cmd/client/main.go` - Added connection retry loop with exponential backoff
 
-- **DarwinKit API differences** - Code uses new DarwinKit v0.5.0 API (not old macdriver)
-- **Import paths** - Using `github.com/progrium/darwinkit/macos/appkit` etc.
-- **Button handlers** - Using `action.Set()` from `helper/action` package
-- **Carbon hotkey modifiers** - 0x1000=Ctrl, 0x0800=Option, keycodes: n=45, c=8
+### Current Status
 
-### After Mac Testing
+- ✅ Server builds and runs
+- ✅ Client builds (39MB binary)
+- ✅ Client starts and shows native UI
+- ✅ Hotkeys registered (Ctrl+N, Ctrl+Alt+C)
+- ✅ Connection retry logic works
+- 🔄 Testing recording/transcription flow
 
-Once testing is complete and any fixes are made, return to Linux for:
-- Final cleanup
-- Documentation updates
-- PR preparation
+### What Still Needs Testing
+
+1. **Full recording flow** - Press Ctrl+N, speak, press Ctrl+N, verify transcription and paste
+2. **Calibration wizard** - Press Ctrl+Alt+C, complete 3-step wizard
+3. **Preview window** - Verify it doesn't steal focus
+4. **Paste** - Verify text goes to clipboard and Cmd+V is simulated
+
+---
+
+## Original Implementation Notes (Linux)
 
 ---
 

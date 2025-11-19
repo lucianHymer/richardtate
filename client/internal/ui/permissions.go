@@ -8,19 +8,19 @@ package ui
 #import <AppKit/AppKit.h>
 
 // Check if we have accessibility permissions
-int checkAccessibilityPermissions() {
+static int checkAccessibilityPermissions() {
     return AXIsProcessTrusted();
 }
 
 // Prompt user for accessibility permissions
 // Opens System Preferences to the right pane
-void promptForAccessibility() {
+static void promptForAccessibility() {
     NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
     AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
 }
 
 // Open System Preferences directly to Accessibility pane
-void openAccessibilityPreferences() {
+static void openAccessibilityPreferences() {
     NSString *urlString = @"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
     NSURL *url = [NSURL URLWithString:urlString];
     [[NSWorkspace sharedWorkspace] openURL:url];

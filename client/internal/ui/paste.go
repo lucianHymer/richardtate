@@ -6,7 +6,7 @@ package ui
 
 #include <ApplicationServices/ApplicationServices.h>
 
-void simulatePaste() {
+static void simulatePaste() {
     // Create key down event for Cmd+V
     CGEventRef keyDown = CGEventCreateKeyboardEvent(NULL, 9, true);  // 9 = 'v' key code
     CGEventSetFlags(keyDown, kCGEventFlagMaskCommand);
