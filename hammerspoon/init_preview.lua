@@ -77,14 +77,7 @@ function createPreviewWindow()
     ]])
 
     previewWindow:show()
-
-    -- Ensure window is visible
-    hs.timer.doAfter(0.1, function()
-        if previewWindow then
-            previewWindow:hswindow():focus()
-            previewWindow:hswindow():raise()
-        end
-    end)
+    -- Don't focus - we want it tooltip-like, not focus-stealing
 end
 
 -- Update preview window with new text
@@ -181,8 +174,8 @@ function startRecording()
                     print("WebSocket event:", event)
                 end
             end)
+            -- hs.websocket.new() auto-connects, no need to call ws:connect()
 
-            ws:connect()
             -- recording = true  -- Already set at the beginning
         else
             print("Failed to start recording: " .. tostring(status))
