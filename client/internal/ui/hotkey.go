@@ -32,7 +32,11 @@ static void installHotkeyHandler() {
 */
 import "C"
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/progrium/darwinkit/dispatch"
+)
 
 var (
 	toggleCallback      func()
@@ -53,7 +57,8 @@ func goHotkeyCallback(id C.int) {
 	hotkeyMu.Unlock()
 
 	if cb != nil {
-		cb()
+		// CRITICAL: Dispatch to main thread for UI operations
+		dispatch.MainQueue().DispatchAsync(cb)
 	}
 }
 

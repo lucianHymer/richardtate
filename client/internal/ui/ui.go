@@ -143,11 +143,14 @@ func (u *UI) saveCalibrationThreshold(threshold float64) error {
 // toggleRecording handles hotkey press
 func (u *UI) toggleRecording() {
 	u.logger.Info("Hotkey pressed")
-	u.mu.Lock()
-	defer u.mu.Unlock()
 
-	u.logger.Info("Recording state: %v", u.recording)
-	if u.recording {
+	// Check current state with lock
+	u.mu.Lock()
+	isRecording := u.recording
+	u.mu.Unlock()
+
+	u.logger.Info("Recording state: %v", isRecording)
+	if isRecording {
 		u.stopRecording()
 	} else {
 		u.startRecording()
@@ -155,40 +158,51 @@ func (u *UI) toggleRecording() {
 }
 
 func (u *UI) startRecording() {
+	u.logger.Info("startRecording called")
+
+	// Recreate window fresh each time
+	u.app.RecreateWindow()
 	window := u.app.GetWindow()
 	if window == nil {
 		u.logger.Error("Window not initialized")
 		return
 	}
+	u.logger.Info("Window recreated")
 
-	u.logger.Info("startRecording called - clearing window")
+	// Set recording state
+	u.mu.Lock()
+	u.recording = true
+	u.mu.Unlock()
+	u.logger.Info("Recording state set to true")
 
-	// Clear and show window (already on main thread from toggleRecording)
-	window.Clear()
-	u.logger.Info("Window cleared - calling Show()")
-	window.Show()
-	u.logger.Info("Window.Show() called")
-
-	// Call handler
+	// Call handler FIRST (audio start), then show window
 	if u.onStart != nil {
 		u.logger.Info("Calling onStart handler")
 		if err := u.onStart(); err != nil {
 			u.logger.Error("Recording start failed: %v", err)
-			window.Hide()
+			u.mu.Lock()
+			u.recording = false
+			u.mu.Unlock()
 			return
 		}
 		u.logger.Info("onStart handler completed successfully")
 	}
 
-	u.recording = true
-	u.logger.Info("Recording started - recording state set to true")
+	// Show window AFTER audio is started
+	// Small delay to let runloop process
+	time.Sleep(50 * time.Millisecond)
+	u.logger.Info("Calling Show()")
+	window.Show()
+	u.logger.Info("Window.Show() called")
 }
 
 func (u *UI) stopRecording() {
 	window := u.app.GetWindow()
 	if window == nil {
 		u.logger.Error("Window not initialized")
+		u.mu.Lock()
 		u.recording = false
+		u.mu.Unlock()
 		return
 	}
 
@@ -211,7 +225,9 @@ func (u *UI) stopRecording() {
 	// Hide window (already on main thread from toggleRecording)
 	window.Hide()
 
+	u.mu.Lock()
 	u.recording = false
+	u.mu.Unlock()
 }
 
 // SetTranscription replaces the current transcription text (thread-safe)

@@ -50,22 +50,30 @@ The initial code from Linux had several issues when building on macOS with Darwi
 - ✅ Text displays in preview window (sea foam green on dark background)
 - ✅ Text wrapping works
 - ✅ Paste to clipboard works
-- ⚠️ **Preview window unreliable** - Shows first time after app start, then intermittently fails to show on subsequent recordings
+- ✅ **Preview window now reliable** - Fixed by recreating window each recording session
 
-### Known Issues
+### Window Reliability Fix (2025-11-19)
 
-1. **Preview window visibility unreliable** - The window shows correctly the first time after app launch, but on subsequent Ctrl+N presses it often fails to appear even though transcription is running. Logs show `Window.Show()` is being called but the window doesn't become visible. Tried multiple approaches:
-   - `OrderFrontRegardless()` - doesn't work after `OrderOut()`
-   - `SetIsVisible(true/false)` - same issue
-   - `MakeKeyAndOrderFront()` - same issue
-   - Various Dispatch/main thread approaches - same issue
+The preview window was failing to show on subsequent Ctrl+N presses after the first recording. Tried many approaches:
+- `OrderFrontRegardless()` - doesn't work after `OrderOut()`
+- `SetIsVisible(true/false)` - same issue
+- `MakeKeyAndOrderFront()` - same issue
+- Various Dispatch/main thread approaches - same issue
+- Swapping order of Show() and audio start - same issue
+- Adding delays - same issue
 
-   This appears to be a DarwinKit or macOS window management issue that needs further investigation.
+**Root cause**: Unclear - possibly interaction between CoreAudio (malgo) and AppKit window management. The audio capture device initialization/enumeration appears to affect window state in ways that prevent it from showing again after being hidden with `OrderOut()`.
+
+**Solution**: Recreate the window fresh each time recording starts instead of hiding/showing the same window. Added `RecreateWindow()` method to App that creates a new Window instance. This works reliably.
+
+**Files modified**:
+- `client/internal/ui/app.go` - Added `RecreateWindow()` method
+- `client/internal/ui/ui.go` - Call `RecreateWindow()` at start of `startRecording()`
+- `client/internal/ui/hotkey.go` - Added dispatch to main thread for hotkey callbacks
 
 ### What Still Needs Testing
 
 1. **Calibration wizard** - Press Ctrl+Alt+C, complete 3-step wizard
-2. **Fix preview window reliability** - Investigate why window fails to show after first use
 
 ---
 

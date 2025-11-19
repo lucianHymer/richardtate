@@ -43,6 +43,11 @@ func (a *App) GetWindow() *Window {
 	return a.window
 }
 
+// RecreateWindow destroys and recreates the preview window
+func (a *App) RecreateWindow() {
+	a.window = NewWindow()
+}
+
 // GetCalibration returns the calibration window
 func (a *App) GetCalibration() *CalibrationWindow {
 	return a.calibration
