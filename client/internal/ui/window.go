@@ -3,7 +3,6 @@ package ui
 import (
 	"github.com/progrium/darwinkit/macos/appkit"
 	"github.com/progrium/darwinkit/macos/foundation"
-	"github.com/progrium/darwinkit/objc"
 )
 
 // Window is a floating transcription preview
@@ -41,10 +40,10 @@ func NewWindow() *Window {
 	// CRITICAL: Make window non-interactive (click-through)
 	nsWindow.SetIgnoresMouseEvents(true)
 
-	// Retain window to prevent deallocation
-	objc.Retain(&nsWindow)
-
-	// Don't release on close - we call Close() manually to destroy old windows
+	// Don't release on close - we manage lifecycle manually via Close()
+	// NOTE: Do NOT use objc.Retain() here - it sets up a GC finalizer that
+	// will call Release() even after we've manually closed the window,
+	// causing a double-free crash (SIGSEGV in Object_Release)
 	nsWindow.SetReleasedWhenClosed(false)
 
 	// Set dark background color
