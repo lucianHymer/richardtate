@@ -94,25 +94,27 @@ function updatePreview(text)
     if previewWindow then
         print("Updating preview with text length:", string.len(text))
 
-        -- Use JSON encoding for safe JavaScript string handling
-        local jsonText = hs.json.encode(text)
+        -- Escape the text for JavaScript string literal
+        local escapedText = text:gsub("\\", "\\\\")
+                                :gsub("'", "\\'")
+                                :gsub("\n", "\\n")
+                                :gsub("\r", "\\r")
 
         -- Replace entire preview content
         local js = string.format([[
             try {
                 var elem = document.getElementById('preview');
                 if (elem) {
-                    elem.textContent = %s;
+                    elem.textContent = '%s';
                     // Auto-scroll to bottom
                     window.scrollTo(0, document.body.scrollHeight);
-                    console.log('Updated preview with text:', %s);
                 } else {
                     console.error('Preview element not found');
                 }
             } catch(e) {
                 console.error('Error updating preview:', e);
             }
-        ]], jsonText, jsonText)
+        ]], escapedText)
 
         previewWindow:evaluateJavaScript(js, function(result, error)
             if error then
