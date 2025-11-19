@@ -20,15 +20,40 @@ fi
 echo "✅ Hammerspoon found at /Applications/Hammerspoon.app"
 echo ""
 
+# Choose transcription mode
+echo "Choose transcription mode:"
+echo "  1) Direct insertion (text appears at cursor as it arrives)"
+echo "  2) Preview window (see evolving text, insert when done) - RECOMMENDED for Parakeet"
+echo ""
+read -p "Choose mode [1/2]: " mode_choice
+
+# Get the script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+CALIBRATION_LUA="$SCRIPT_DIR/calibration.lua"
+
+# Select the appropriate init.lua based on mode
+case $mode_choice in
+    1)
+        INIT_LUA="$SCRIPT_DIR/init.lua"
+        MODE_DESC="direct insertion"
+        ;;
+    2)
+        INIT_LUA="$SCRIPT_DIR/init_preview.lua"
+        MODE_DESC="preview window"
+        ;;
+    *)
+        echo "❌ Invalid choice"
+        exit 1
+        ;;
+esac
+
+echo "✅ Selected $MODE_DESC mode"
+echo ""
+
 # Create Hammerspoon config directory
 HAMMERSPOON_DIR="$HOME/.hammerspoon"
 mkdir -p "$HAMMERSPOON_DIR"
 echo "✅ Created config directory: $HAMMERSPOON_DIR"
-
-# Get the script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-INIT_LUA="$SCRIPT_DIR/init.lua"
-CALIBRATION_LUA="$SCRIPT_DIR/calibration.lua"
 
 # Copy calibration.lua first (required dependency)
 echo "✅ Installing calibration.lua module"

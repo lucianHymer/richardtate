@@ -15,17 +15,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
-// SharedParakeetWorker manages a single persistent Python subprocess
-// Multiple pipelines can share this worker for transcription requests
+// SharedParakeetWorker manages a single persistent Python subprocess for streaming
+// This is the streaming version that replaces the previous batch-based implementation
 type SharedParakeetWorker struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
 	stdout    *bufio.Reader
 	stderr    *bufio.Reader
-	mu        sync.Mutex // Protects access to stdin/stdout (subprocess is single-threaded)
+	mu        sync.Mutex // Protects stdin/stdout access
 	log       *logger.ContextLogger
 	modelPath string
 
@@ -33,25 +34,58 @@ type SharedParakeetWorker struct {
 	started  bool
 	startErr error
 	doneChan chan struct{}
+
+	// Active client tracking
+	activeClients map[string]*ParakeetClient
+	clientsMu     sync.RWMutex
 }
 
-// NewSharedParakeetWorker creates a single persistent Parakeet subprocess
-// This should be called once at server startup and shared across all pipelines
-func NewSharedParakeetWorker(config ParakeetConfig) (*SharedParakeetWorker, error) {
-	log := config.Logger.With("parakeet-shared")
+// ParakeetClient tracks state for each client's streaming session
+type ParakeetClient struct {
+	ID           string
+	Buffer       []float32 // Accumulate samples until 1 second
+	StreamActive bool
+}
 
-	// Use configured script path, or auto-detect if not provided
+// ParakeetStreamRequest for streaming protocol
+type ParakeetStreamRequest struct {
+	Command     string `json:"command"`                // "start_stream", "add_audio", "end_stream"
+	ClientID    string `json:"client_id"`              // Unique client identifier
+	Audio       string `json:"audio,omitempty"`        // Base64 encoded audio (for add_audio)
+	SampleRate  int    `json:"sample_rate,omitempty"`  // Sample rate (for add_audio)
+	ContextSize []int  `json:"context_size,omitempty"` // [left, right] context frames (for start_stream)
+	Depth       int    `json:"depth,omitempty"`        // Encoder depth (for start_stream)
+}
+
+// ParakeetStreamResponse from streaming protocol
+type ParakeetStreamResponse struct {
+	Status   string `json:"status,omitempty"`   // For start/end responses
+	Text     string `json:"text,omitempty"`     // Transcription text
+	IsFinal  bool   `json:"is_final,omitempty"` // Whether text is finalized
+	ClientID string `json:"client_id"`          // Client this response belongs to
+	Error    string `json:"error,omitempty"`    // Error message if any
+}
+
+// NewSharedParakeetWorker creates a streaming Parakeet worker
+func NewSharedParakeetWorker(config ParakeetConfig) (*SharedParakeetWorker, error) {
+	log := config.Logger.With("parakeet-streaming")
+
+	// Use streaming script
 	scriptPath := config.ScriptPath
 	if scriptPath == "" {
-		scriptPath = getParakeetScript()
+		if runtime.GOOS == "darwin" {
+			scriptPath = filepath.Join("scripts", "parakeet_worker_streaming.py")
+		} else {
+			// Fall back to streaming mock on Linux for testing
+			scriptPath = filepath.Join("scripts", "parakeet_mock_streaming.py")
+		}
 	}
 
 	// Verify script exists
 	if _, err := os.Stat(scriptPath); err != nil {
-		return nil, fmt.Errorf("Parakeet worker script not found at %s: %w", scriptPath, err)
+		return nil, fmt.Errorf("Parakeet streaming script not found at %s: %w", scriptPath, err)
 	}
 
-	// Use configured Python path, or default to "python3"
 	pythonPath := config.PythonPath
 	if pythonPath == "" {
 		pythonPath = "python3"
@@ -60,19 +94,17 @@ func NewSharedParakeetWorker(config ParakeetConfig) (*SharedParakeetWorker, erro
 	// Create command
 	cmd := exec.Command(pythonPath, scriptPath, config.ModelPath)
 
-	// Inherit environment and ensure common FFmpeg locations are in PATH
+	// Setup environment
 	env := os.Environ()
 	pathSet := false
 	for i, e := range env {
 		if len(e) > 5 && e[:5] == "PATH=" {
-			// Prepend common FFmpeg locations to PATH
 			env[i] = "PATH=/opt/homebrew/bin:/usr/local/bin:" + e[5:]
 			pathSet = true
 			break
 		}
 	}
 	if !pathSet {
-		// No PATH in environment, set a default
 		env = append(env, "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
 	}
 	cmd.Env = env
@@ -94,13 +126,14 @@ func NewSharedParakeetWorker(config ParakeetConfig) (*SharedParakeetWorker, erro
 	}
 
 	worker := &SharedParakeetWorker{
-		cmd:       cmd,
-		stdin:     stdin,
-		stdout:    bufio.NewReader(stdout),
-		stderr:    bufio.NewReader(stderr),
-		log:       log,
-		modelPath: config.ModelPath,
-		doneChan:  make(chan struct{}),
+		cmd:           cmd,
+		stdin:         stdin,
+		stdout:        bufio.NewReader(stdout),
+		stderr:        bufio.NewReader(stderr),
+		log:           log,
+		modelPath:     config.ModelPath,
+		doneChan:      make(chan struct{}),
+		activeClients: make(map[string]*ParakeetClient),
 	}
 
 	// Start the subprocess
@@ -111,7 +144,7 @@ func NewSharedParakeetWorker(config ParakeetConfig) (*SharedParakeetWorker, erro
 	return worker, nil
 }
 
-// start launches the Python subprocess and waits for it to be ready
+// start launches the Python subprocess
 func (w *SharedParakeetWorker) start() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -120,15 +153,7 @@ func (w *SharedParakeetWorker) start() error {
 		return nil
 	}
 
-	w.log.Info("Starting shared Parakeet subprocess with model: %s", w.modelPath)
-
-	// Debug: Log PATH being passed to subprocess
-	for _, e := range w.cmd.Env {
-		if len(e) > 5 && e[:5] == "PATH=" {
-			w.log.Debug("Subprocess PATH: %s", e[5:])
-			break
-		}
-	}
+	w.log.Info("Starting streaming Parakeet subprocess with model: %s", w.modelPath)
 
 	// Start the process
 	if err := w.cmd.Start(); err != nil {
@@ -143,42 +168,40 @@ func (w *SharedParakeetWorker) start() error {
 	// Monitor process health
 	go w.monitorProcess()
 
-	// Wait for model to load (check for ready signal)
+	// Test readiness with a dummy stream
 	if err := w.waitForReady(); err != nil {
 		w.cmd.Process.Kill()
 		return fmt.Errorf("Parakeet failed to initialize: %w", err)
 	}
 
-	w.log.Info("Shared Parakeet subprocess ready (will be reused across all pipelines)")
+	w.log.Info("Streaming Parakeet subprocess ready")
 	return nil
 }
 
-// waitForReady sends a test request and waits for response
+// waitForReady tests the streaming protocol
 func (w *SharedParakeetWorker) waitForReady() error {
-	// Set a timeout for initialization
-	timeout := time.After(60 * time.Second) // Model loading can take time
+	timeout := time.After(60 * time.Second)
 
-	// Create a temporary request/response to verify the process is ready
-	testSamples := make([]float32, 16000) // 1 second of silence
-	testReq := ParakeetRequest{
-		Audio:      encodeAudioToBase64(testSamples),
-		SampleRate: 16000,
+	// Test start_stream
+	testReq := ParakeetStreamRequest{
+		Command:     "start_stream",
+		ClientID:    "test-" + uuid.New().String(),
+		ContextSize: []int{256, 256},
+		Depth:       1,
 	}
 
 	encoder := json.NewEncoder(w.stdin)
+	decoder := json.NewDecoder(w.stdout)
 
-	// Send test request
 	if err := encoder.Encode(testReq); err != nil {
 		return fmt.Errorf("failed to send test request: %w", err)
 	}
 
-	// Wait for response or timeout
 	respChan := make(chan error, 1)
 	go func() {
-		var resp ParakeetResponse
-		decoder := json.NewDecoder(w.stdout)
+		var resp ParakeetStreamResponse
 		if err := decoder.Decode(&resp); err != nil {
-			respChan <- fmt.Errorf("failed to decode test response: %w", err)
+			respChan <- fmt.Errorf("failed to decode response: %w", err)
 		} else if resp.Error != "" {
 			respChan <- fmt.Errorf("Parakeet error: %s", resp.Error)
 		} else {
@@ -188,22 +211,39 @@ func (w *SharedParakeetWorker) waitForReady() error {
 
 	select {
 	case err := <-respChan:
-		return err
+		if err != nil {
+			return err
+		}
 	case <-timeout:
 		return fmt.Errorf("timeout waiting for Parakeet to initialize")
 	}
+
+	// Clean up test stream
+	endReq := ParakeetStreamRequest{
+		Command:  "end_stream",
+		ClientID: testReq.ClientID,
+	}
+	encoder.Encode(endReq)
+
+	// Read end response (non-blocking)
+	go func() {
+		var resp ParakeetStreamResponse
+		decoder.Decode(&resp)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	return nil
 }
 
-// monitorStderr logs stderr output from the Python process
+// monitorStderr logs stderr output
 func (w *SharedParakeetWorker) monitorStderr() {
 	scanner := bufio.NewScanner(w.stderr)
 	for scanner.Scan() {
-		line := scanner.Text()
-		w.log.Debug("Parakeet stderr: %s", line)
+		w.log.Debug("Parakeet stderr: %s", scanner.Text())
 	}
 }
 
-// monitorProcess waits for the process to exit and updates state
+// monitorProcess waits for process exit
 func (w *SharedParakeetWorker) monitorProcess() {
 	err := w.cmd.Wait()
 	w.mu.Lock()
@@ -212,58 +252,164 @@ func (w *SharedParakeetWorker) monitorProcess() {
 	w.mu.Unlock()
 
 	if err != nil {
-		w.log.Error("Shared Parakeet subprocess exited with error: %v", err)
+		w.log.Error("Parakeet subprocess exited with error: %v", err)
 	} else {
-		w.log.Info("Shared Parakeet subprocess exited normally")
+		w.log.Info("Parakeet subprocess exited normally")
 	}
 
 	close(w.doneChan)
 }
 
-// Transcribe sends audio to the subprocess and returns transcription
-// This method is thread-safe and can be called by multiple pipelines concurrently
-// Note: Requests are serialized (mutex-protected) since subprocess handles one request at a time
-func (w *SharedParakeetWorker) Transcribe(audioSamples []float32) (string, error) {
+// CreateClient creates a new client session for streaming
+func (w *SharedParakeetWorker) CreateClient() string {
+	clientID := uuid.New().String()
+
+	w.clientsMu.Lock()
+	w.activeClients[clientID] = &ParakeetClient{
+		ID:     clientID,
+		Buffer: make([]float32, 0, 16000), // Pre-allocate for 1 second
+	}
+	w.clientsMu.Unlock()
+
+	w.log.Debug("Created streaming client: %s", clientID)
+	return clientID
+}
+
+// ProcessAudio processes audio for a client (handles buffering and streaming)
+func (w *SharedParakeetWorker) ProcessAudio(clientID string, samples []float32) (string, error) {
+	w.clientsMu.Lock()
+	client, exists := w.activeClients[clientID]
+	if !exists {
+		w.clientsMu.Unlock()
+		return "", fmt.Errorf("no client with ID: %s", clientID)
+	}
+	w.clientsMu.Unlock()
+
+	// Add samples to client's buffer
+	client.Buffer = append(client.Buffer, samples...)
+
+	// Check if we have 1 second of audio (16000 samples at 16kHz)
+	if len(client.Buffer) >= 16000 {
+		// Extract 1 second chunk
+		chunk := client.Buffer[:16000]
+		client.Buffer = client.Buffer[16000:]
+
+		// Start stream if needed
+		if !client.StreamActive {
+			if err := w.startClientStream(clientID); err != nil {
+				return "", fmt.Errorf("failed to start stream: %w", err)
+			}
+			client.StreamActive = true
+		}
+
+		// Send audio to stream
+		text, _, err := w.addAudioToStream(clientID, chunk)
+		if err != nil {
+			return "", fmt.Errorf("failed to add audio: %w", err)
+		}
+
+		return text, nil
+	}
+
+	// Not enough audio yet
+	return "", nil
+}
+
+// startClientStream starts a streaming context for a client
+func (w *SharedParakeetWorker) startClientStream(clientID string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Check if process is still running
-	select {
-	case <-w.doneChan:
-		return "", fmt.Errorf("Parakeet subprocess has terminated")
-	default:
+	req := ParakeetStreamRequest{
+		Command:     "start_stream",
+		ClientID:    clientID,
+		ContextSize: []int{256, 256},
+		Depth:       1,
 	}
 
-	// Encode audio to base64
-	audioBase64 := encodeAudioToBase64(audioSamples)
+	encoder := json.NewEncoder(w.stdin)
+	if err := encoder.Encode(req); err != nil {
+		return err
+	}
 
-	// Create request
-	req := ParakeetRequest{
+	decoder := json.NewDecoder(w.stdout)
+	var resp ParakeetStreamResponse
+	if err := decoder.Decode(&resp); err != nil {
+		return err
+	}
+
+	if resp.Error != "" {
+		return fmt.Errorf(resp.Error)
+	}
+
+	return nil
+}
+
+// addAudioToStream adds audio to an active stream
+func (w *SharedParakeetWorker) addAudioToStream(clientID string, samples []float32) (string, bool, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	audioBase64 := encodeAudioToBase64(samples)
+
+	req := ParakeetStreamRequest{
+		Command:    "add_audio",
+		ClientID:   clientID,
 		Audio:      audioBase64,
 		SampleRate: 16000,
 	}
 
-	// Send request
 	encoder := json.NewEncoder(w.stdin)
 	if err := encoder.Encode(req); err != nil {
-		return "", fmt.Errorf("failed to send request to Parakeet: %w", err)
+		return "", false, err
 	}
 
-	// Read response
 	decoder := json.NewDecoder(w.stdout)
-	var resp ParakeetResponse
+	var resp ParakeetStreamResponse
 	if err := decoder.Decode(&resp); err != nil {
-		return "", fmt.Errorf("failed to read response from Parakeet: %w", err)
+		return "", false, err
 	}
 
 	if resp.Error != "" {
-		return "", fmt.Errorf("Parakeet error: %s", resp.Error)
+		return "", false, fmt.Errorf(resp.Error)
 	}
 
-	return resp.Text, nil
+	return resp.Text, resp.IsFinal, nil
 }
 
-// Close gracefully shuts down the subprocess
+// CloseClient ends a client's streaming session
+func (w *SharedParakeetWorker) CloseClient(clientID string) error {
+	w.clientsMu.Lock()
+	client, exists := w.activeClients[clientID]
+	if !exists {
+		w.clientsMu.Unlock()
+		return nil
+	}
+	delete(w.activeClients, clientID)
+	w.clientsMu.Unlock()
+
+	// Flush remaining audio if any
+	if len(client.Buffer) > 0 && client.StreamActive {
+		w.addAudioToStream(clientID, client.Buffer)
+	}
+
+	// End stream if it was started
+	if client.StreamActive {
+		w.mu.Lock()
+		req := ParakeetStreamRequest{
+			Command:  "end_stream",
+			ClientID: clientID,
+		}
+		encoder := json.NewEncoder(w.stdin)
+		encoder.Encode(req)
+		w.mu.Unlock()
+	}
+
+	w.log.Debug("Closed streaming client: %s", clientID)
+	return nil
+}
+
+// Close shuts down the worker
 func (w *SharedParakeetWorker) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -272,12 +418,25 @@ func (w *SharedParakeetWorker) Close() error {
 		return nil
 	}
 
-	w.log.Info("Shutting down shared Parakeet subprocess")
+	w.log.Info("Shutting down streaming Parakeet subprocess")
+
+	// Close all clients
+	w.clientsMu.Lock()
+	for clientID := range w.activeClients {
+		req := ParakeetStreamRequest{
+			Command:  "end_stream",
+			ClientID: clientID,
+		}
+		encoder := json.NewEncoder(w.stdin)
+		encoder.Encode(req)
+	}
+	w.activeClients = make(map[string]*ParakeetClient)
+	w.clientsMu.Unlock()
 
 	// Close stdin to signal shutdown
 	w.stdin.Close()
 
-	// Give process time to exit gracefully
+	// Wait for graceful shutdown
 	done := make(chan struct{})
 	go func() {
 		<-w.doneChan
@@ -289,27 +448,45 @@ func (w *SharedParakeetWorker) Close() error {
 		// Process exited gracefully
 	case <-time.After(5 * time.Second):
 		// Force kill after timeout
-		w.log.Warn("Force killing shared Parakeet subprocess")
+		w.log.Warn("Force killing streaming Parakeet subprocess")
 		w.cmd.Process.Kill()
 	}
 
 	return nil
 }
 
-// getParakeetScript returns the path to the appropriate Python script (fallback only)
-// NOTE: This is only used as a fallback when ScriptPath is not configured.
-// For daemon use, always configure an absolute path in the config YAML.
-func getParakeetScript() string {
-	// Use real script on macOS, mock on Linux
-	if runtime.GOOS == "darwin" {
-		return filepath.Join("scripts", "parakeet_worker.py")
+// Transcribe implements the simple interface for compatibility
+// Creates a temporary client for one-shot transcription
+func (w *SharedParakeetWorker) Transcribe(samples []float32) (string, error) {
+	// For compatibility - creates a client, processes, and cleans up
+	clientID := w.CreateClient()
+	defer w.CloseClient(clientID)
+
+	// Process in chunks (may need multiple calls for full transcription)
+	var result string
+	for i := 0; i < len(samples); i += 3200 { // Process in ~200ms chunks
+		end := i + 3200
+		if end > len(samples) {
+			end = len(samples)
+		}
+
+		text, err := w.ProcessAudio(clientID, samples[i:end])
+		if err != nil {
+			return result, err
+		}
+		if text != "" {
+			if result != "" {
+				result += " "
+			}
+			result += text
+		}
 	}
-	return filepath.Join("scripts", "parakeet_mock.py")
+
+	return result, nil
 }
 
-// encodeAudioToBase64 converts float32 samples to base64 string
+// Helper function for encoding
 func encodeAudioToBase64(samples []float32) string {
-	// Convert float32 array to bytes
 	buf := make([]byte, len(samples)*4)
 	for i, sample := range samples {
 		bits := math.Float32bits(sample)

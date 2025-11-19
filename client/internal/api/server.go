@@ -185,10 +185,26 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Close all WebSocket connections to signal clients we're done
+	s.closeAllWebSockets()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "stopped",
 	})
+}
+
+// closeAllWebSockets closes all connected WebSocket clients
+func (s *Server) closeAllWebSockets() {
+	s.wsClientsMu.Lock()
+	defer s.wsClientsMu.Unlock()
+
+	for conn := range s.wsClients {
+		conn.Close()
+		delete(s.wsClients, conn)
+	}
+
+	s.logger.Info("Closed all WebSocket connections")
 }
 
 // handleStatus handles status requests

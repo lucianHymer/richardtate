@@ -9,7 +9,7 @@ import (
 // ParakeetConfig holds configuration for Parakeet MLX engine
 type ParakeetConfig struct {
 	ModelPath  string         // Model ID (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
-	ScriptPath string         // Path to parakeet_worker.py script
+	ScriptPath string         // Path to parakeet_worker_streaming.py script
 	PythonPath string         // Path to Python interpreter (default: "python3")
 	Logger     *logger.Logger // Logger instance
 }

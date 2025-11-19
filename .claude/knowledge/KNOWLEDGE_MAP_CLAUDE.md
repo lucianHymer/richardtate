@@ -11,6 +11,7 @@ System design, component relationships, and structural decisions.
 @architecture/whisper-model-sharing.md
 @architecture/asr-interface-abstraction.md
 @architecture/parakeet-integration.md
+@architecture/parakeet-streaming-preview.md
 @architecture/per-client-pipeline.md
 @architecture/vad-calibration-api.md
 @architecture/config-hot-reload.md

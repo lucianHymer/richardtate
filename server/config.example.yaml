@@ -48,9 +48,9 @@ transcription:
     # Model auto-downloads to ~/.cache/parakeet-mlx/ on first use
     model_id: "mlx-community/parakeet-tdt-0.6b-v3"
 
-    # Path to parakeet_worker.py script
+    # Path to parakeet_worker_streaming.py script (streaming version for real-time transcription)
     # Use absolute path when running as daemon
-    script_path: "/workspace/project/scripts/parakeet_worker.py"
+    script_path: "/workspace/project/scripts/parakeet_worker_streaming.py"
 
     # Path to Python interpreter (default: "python3")
     # IMPORTANT: Use the SAME Python that has parakeet-mlx and numpy installed!

@@ -503,6 +503,37 @@ type ParakeetMetrics struct {
 }
 ```
 
+## Streaming Integration (November 2024)
+
+### Overview
+Successfully integrated Parakeet streaming support for real-time transcription without VAD pauses.
+
+### Key Changes
+
+1. **Type Consolidation**: Kept `SharedParakeetWorker` name (avoided creating duplicate `SharedParakeetWorkerStreaming` type)
+
+2. **Streaming Protocol**: JSON messages with commands:
+   - `start_stream`: Initialize new streaming session with client ID
+   - `add_audio`: Add audio samples to existing stream
+   - `end_stream`: Finalize stream and get remaining text
+
+3. **Client-Based Streaming**: Each ParakeetTranscriber creates unique client ID on init, manages its own streaming session
+
+4. **1-Second Buffering**: Parakeet internally accumulates 16000 samples (1 second at 16kHz) before transcribing, providing natural real-time flow
+
+5. **Pipeline Integration**: Modified `ProcessChunk()` to bypass VAD/chunker for Parakeet engine - sends audio directly to ASR since Parakeet handles its own buffering
+
+### Benefits
+- Natural speech flow without VAD pauses
+- Real-time feedback every second
+- No VAD calibration needed
+- Better user experience for continuous speech
+
+### Python Worker
+- Uses `parakeet_worker_streaming.py` with `transcribe_stream()` API
+- Maintains streaming contexts per client ID
+- Handles incremental text tracking (API returns accumulated text, worker sends only new portions)
+
 ## Related Documentation
 - [ASR Interface Abstraction](asr-interface-abstraction.md) - Interface design and Phase 1
 - [Whisper Model Sharing](whisper-model-sharing.md) - Whisper implementation
@@ -512,17 +543,18 @@ type ParakeetMetrics struct {
 ## Files
 
 **Shared Worker Architecture**:
-- `server/internal/transcription/parakeet_shared.go` - SharedParakeetWorker (persistent subprocess)
-- `server/internal/transcription/parakeet_transcriber.go` - Lightweight adapter (40 lines)
+- `server/internal/transcription/parakeet_shared.go` - SharedParakeetWorker with streaming support
+- `server/internal/transcription/parakeet_transcriber.go` - Client-based streaming adapter
 - `server/cmd/server/main.go` - Worker initialization at startup
 
 **Integration Points**:
 - `server/internal/transcription/asr_factory.go` - Factory pattern (accepts SharedParakeetWorker)
-- `server/internal/transcription/pipeline.go` - Pipeline config (uses SharedParakeetWorker)
+- `server/internal/transcription/pipeline.go` - Pipeline config with Parakeet bypass logic
 - `server/internal/webrtc/manager.go` - Manager storage (stores SharedParakeetWorker)
 
 **Python Workers**:
-- `scripts/parakeet_worker.py` - Real Parakeet MLX worker (macOS)
+- `scripts/parakeet_worker_streaming.py` - Streaming Parakeet MLX worker (macOS)
+- `scripts/parakeet_worker.py` - Non-streaming Parakeet MLX worker (legacy)
 - `scripts/parakeet_mock.py` - Mock worker for testing (Linux)
 - `scripts/build-mac.sh` - Installation automation
 
