@@ -23,6 +23,11 @@ type TranscriptionPipeline struct {
 	active     bool
 	debugWAV   bool // Enable WAV file debugging
 	log        *logger.ContextLogger
+
+	// Parakeet silence accumulation state
+	parakeetWasSpeaking bool      // Was the previous chunk speech?
+	parakeetSilenceBuf  []float32 // Accumulated silence samples
+	parakeetSilenceSent bool      // Have we sent the silence flush after speech?
 }
 
 // TranscriptionResult holds transcription output
@@ -145,8 +150,10 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 
 	// Step 3: Route based on engine type
 	if p.engine == "parakeet" {
-		// For Parakeet streaming: use VAD to gate chunks before sending to ASR
-		// Only send chunks that contain speech to avoid unnecessary refreshes
+		// For Parakeet streaming: use VAD to manage silence accumulation
+		// - Speech chunks: send immediately (with any accumulated silence)
+		// - First silence after speech: send it (pushes Parakeet buffer)
+		// - Continuing silence: accumulate, don't send (avoids refreshes)
 
 		// Process samples through VAD to detect speech
 		frameSize := 160 // 10ms at 16kHz
@@ -158,19 +165,53 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 			}
 		}
 
-		// Skip this chunk if no speech detected
-		if !hasSpeech {
-			return nil
-		}
-
 		// Convert int16 samples to float32 for ASR
 		floatSamples := make([]float32, len(samples))
 		for i, sample := range samples {
 			floatSamples[i] = float32(sample) / 32768.0
 		}
 
-		// Transcribe directly (Parakeet returns text when it has enough audio)
-		text, err := p.asr.Transcribe(floatSamples)
+		var samplesToSend []float32
+
+		// Parakeet internal buffer is 1 second = 16000 samples at 16kHz
+		const parakeetBufferSamples = 16000
+
+		if hasSpeech {
+			// Speech chunk: prepend any accumulated silence, then send
+			if len(p.parakeetSilenceBuf) > 0 {
+				samplesToSend = append(p.parakeetSilenceBuf, floatSamples...)
+				p.parakeetSilenceBuf = nil
+			} else {
+				samplesToSend = floatSamples
+			}
+			p.parakeetWasSpeaking = true
+			p.parakeetSilenceSent = false
+		} else {
+			// Silence chunk
+			if p.parakeetSilenceSent {
+				// Already sent silence flush, just accumulate
+				p.parakeetSilenceBuf = append(p.parakeetSilenceBuf, floatSamples...)
+				return nil
+			}
+
+			// Accumulate silence
+			p.parakeetSilenceBuf = append(p.parakeetSilenceBuf, floatSamples...)
+
+			// Check if we've accumulated 1 second of silence (matches Parakeet's internal buffer)
+			if len(p.parakeetSilenceBuf) >= parakeetBufferSamples {
+				// Send accumulated silence to push Parakeet's buffer through
+				samplesToSend = p.parakeetSilenceBuf
+				p.parakeetSilenceBuf = nil
+				p.parakeetWasSpeaking = false
+				p.parakeetSilenceSent = true
+			} else {
+				// Not enough silence yet, keep accumulating
+				return nil
+			}
+		}
+
+		// Transcribe (Parakeet returns text when it has enough audio)
+		text, err := p.asr.Transcribe(samplesToSend)
 
 		// If we got text back, send it as a result
 		if text != "" {
@@ -279,9 +320,12 @@ func (p *TranscriptionPipeline) Start() error {
 	p.chunker.Reset()
 	p.rnnoise.Reset()
 
-	// Reset VAD for Parakeet
+	// Reset VAD and silence buffer for Parakeet
 	if p.vad != nil {
 		p.vad.Reset()
+		p.parakeetWasSpeaking = false
+		p.parakeetSilenceBuf = nil
+		p.parakeetSilenceSent = false
 	}
 
 	return nil
