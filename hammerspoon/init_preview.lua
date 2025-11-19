@@ -157,34 +157,28 @@ function startRecording()
             indicator:show()
 
             -- Connect WebSocket for transcriptions
-            ws = hs.websocket.new(WS_URL, function(type, message)
-                if type == "received" then
+            ws = hs.websocket.new(WS_URL, function(event, message)
+                if event == "received" then
                     print("WebSocket received message:", message)
-                    local msg = hs.json.decode(message)
-                    if msg and msg.type == "transcript_final" then
-                        print("Processing transcript_final message")
-                        local data = hs.json.decode(msg.data)
-                        if data and data.text then
-                            print("Transcript text length:", string.len(data.text))
-                            -- Update preview with full text (replaces everything)
-                            updatePreview(data.text)
-                        else
-                            print("No text in transcript data")
-                        end
+                    local success, data = pcall(hs.json.decode, message)
+                    if success and data.chunk then
+                        print("Transcript chunk length:", string.len(data.chunk))
+                        -- Update preview with full text (replaces everything)
+                        updatePreview(data.chunk)
                     else
-                        print("Message type:", msg and msg.type or "unknown")
+                        print("Failed to decode or no chunk in message")
                     end
-                elseif type == "open" then
+                elseif event == "open" then
                     print("WebSocket connected")
-                elseif type == "closed" or type == "fail" then
-                    print("WebSocket closed/failed, type:", type)
+                elseif event == "closed" or event == "fail" then
+                    print("WebSocket closed/failed, event:", event)
 
                     -- WebSocket closed by server (or failed) - time to insert final text
                     if not recording then  -- Only if we're in the stopping phase
                         finishRecording()
                     end
                 else
-                    print("WebSocket event type:", type)
+                    print("WebSocket event:", event)
                 end
             end)
 
