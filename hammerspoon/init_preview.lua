@@ -116,11 +116,8 @@ function updatePreview(text)
             }
         ]], escapedText)
 
-        previewWindow:evaluateJavaScript(js, function(result, error)
-            if error then
-                print("JavaScript error:", error)
-            end
-        end)
+        previewWindow:evaluateJavaScript(js)
+        -- Note: evaluateJavaScript callback can be confusing - skip it for now
     else
         print("No preview window to update")
     end
