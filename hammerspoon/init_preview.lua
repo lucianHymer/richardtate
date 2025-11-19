@@ -159,9 +159,10 @@ function startRecording()
             indicator:show()
 
             -- Connect WebSocket for transcriptions
+            print("Creating WebSocket to:", WS_URL)
             ws = hs.websocket.new(WS_URL, function(event, message)
+                print("WebSocket event:", event, "message:", message)
                 if event == "received" then
-                    print("WebSocket received message:", message)
                     local success, data = pcall(hs.json.decode, message)
                     if success and data.chunk then
                         print("Transcript chunk length:", string.len(data.chunk))
@@ -171,7 +172,7 @@ function startRecording()
                         print("Failed to decode or no chunk in message")
                     end
                 elseif event == "open" then
-                    print("WebSocket connected")
+                    print("WebSocket connected successfully")
                 elseif event == "closed" or event == "fail" then
                     print("WebSocket closed/failed, event:", event)
 
@@ -179,11 +180,14 @@ function startRecording()
                     if not recording then  -- Only if we're in the stopping phase
                         finishRecording()
                     end
-                else
-                    print("WebSocket event:", event)
                 end
             end)
-            -- hs.websocket.new() auto-connects, no need to call ws:connect()
+
+            if not ws then
+                print("ERROR: Failed to create WebSocket object")
+            else
+                print("WebSocket object created, waiting for connection...")
+            end
 
             -- recording = true  -- Already set at the beginning
         else
