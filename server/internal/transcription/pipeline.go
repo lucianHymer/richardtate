@@ -13,16 +13,17 @@ import (
 // TranscriptionPipeline handles the complete audio-to-text pipeline
 // Flow: Raw Audio → RNNoise → VAD/Chunker → ASR (Whisper/Parakeet) → Results
 type TranscriptionPipeline struct {
-	asr        ASRTranscriber // ASR engine (Whisper or Parakeet)
-	engine     string         // Engine type: "whisper" or "parakeet"
-	rnnoise    *RNNoiseProcessor
-	chunker    *SmartChunker
-	vad        *VoiceActivityDetector // VAD for Parakeet gating (Whisper uses chunker's VAD)
-	resultChan chan TranscriptionResult
-	mu         sync.RWMutex
-	active     bool
-	debugWAV   bool // Enable WAV file debugging
-	log        *logger.ContextLogger
+	asr          ASRTranscriber // ASR engine (Whisper or Parakeet)
+	engine       string         // Engine type: "whisper" or "parakeet"
+	rnnoise      *RNNoiseProcessor
+	chunker      *SmartChunker
+	vad          *VoiceActivityDetector // VAD for Parakeet gating (Whisper uses chunker's VAD)
+	resultChan   chan TranscriptionResult
+	stateTracker *ProcessingStateTracker // Tracks processing state for loading indicator
+	mu           sync.RWMutex
+	active       bool
+	debugWAV     bool // Enable WAV file debugging
+	log          *logger.ContextLogger
 
 	// Parakeet silence accumulation state
 	parakeetWasSpeaking bool      // Was the previous chunk speech?
@@ -30,11 +31,15 @@ type TranscriptionPipeline struct {
 	parakeetSilenceSent bool      // Have we sent the silence flush after speech?
 }
 
-// TranscriptionResult holds transcription output
+// TranscriptionResult holds transcription output or state changes
 type TranscriptionResult struct {
 	Text      string
 	Timestamp int64 // Unix timestamp in milliseconds
 	Error     error
+
+	// Optional: State change notification (if IsStateChange is true, Text/Error are ignored)
+	IsStateChange bool
+	IsProcessing  bool // Processing state (only valid if IsStateChange is true)
 }
 
 // PipelineConfig holds configuration for the transcription pipeline
@@ -120,6 +125,26 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		Logger:                 config.WhisperConfig.Logger,
 	})
 
+	// Create processing state tracker (2 second idle timeout)
+	pipeline.stateTracker = NewProcessingStateTracker(
+		2*time.Second,
+		func(isProcessing bool) {
+			// Send state change through result channel
+			stateResult := TranscriptionResult{
+				IsStateChange: true,
+				IsProcessing:  isProcessing,
+				Timestamp:     currentTimeMillis(),
+			}
+			select {
+			case pipeline.resultChan <- stateResult:
+				// State change sent
+			default:
+				log.Warn("State change dropped (channel full)")
+			}
+		},
+		config.WhisperConfig.Logger,
+	)
+
 	return pipeline, nil
 }
 
@@ -165,6 +190,13 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 			}
 		}
 
+		// Notify state tracker of VAD state
+		if hasSpeech {
+			p.stateTracker.NotifySpeechDetected()
+		} else {
+			p.stateTracker.NotifySilence()
+		}
+
 		// Convert int16 samples to float32 for ASR
 		floatSamples := make([]float32, len(samples))
 		for i, sample := range samples {
@@ -173,8 +205,9 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 
 		var samplesToSend []float32
 
-		// Parakeet internal buffer is 1 second = 16000 samples at 16kHz
-		const parakeetBufferSamples = 16000
+		// Parakeet internal buffer needs 1.5-2 seconds of silence to flush final words
+		// Using 1.5 seconds = 24000 samples at 16kHz as a balance
+		const parakeetBufferSamples = 24000 // 1.5 seconds
 
 		if hasSpeech {
 			// Speech chunk: prepend any accumulated silence, then send
@@ -197,7 +230,7 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 			// Accumulate silence
 			p.parakeetSilenceBuf = append(p.parakeetSilenceBuf, floatSamples...)
 
-			// Check if we've accumulated 1 second of silence (matches Parakeet's internal buffer)
+			// Check if we've accumulated 1.5 seconds of silence to flush Parakeet's buffer
 			if len(p.parakeetSilenceBuf) >= parakeetBufferSamples {
 				// Send accumulated silence to push Parakeet's buffer through
 				samplesToSend = p.parakeetSilenceBuf
@@ -226,6 +259,8 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 				p.log.InfoWithFields("Parakeet streaming result", map[string]interface{}{
 					"text": text,
 				})
+				// Notify state tracker of transcription activity
+				p.stateTracker.NotifyTranscription()
 			default:
 				p.log.Warn("Result dropped (channel full)")
 			}
@@ -238,6 +273,13 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 		// For Whisper: use traditional VAD/chunker approach
 		// The chunker will call transcribeChunk() when a chunk is ready
 		p.chunker.ProcessSamples(samples)
+
+		// Notify state tracker of VAD state from chunker
+		if p.chunker.IsSpeaking() {
+			p.stateTracker.NotifySpeechDetected()
+		} else {
+			p.stateTracker.NotifySilence()
+		}
 	}
 
 	return nil
@@ -281,6 +323,8 @@ func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 				"text":     text,
 			})
 		}
+		// Notify state tracker of transcription activity
+		p.stateTracker.NotifyTranscription()
 	default:
 		p.log.WarnWithFields("Result dropped (channel full)", map[string]interface{}{
 			"duration": fmt.Sprintf("%.1fs", duration),
@@ -339,16 +383,40 @@ func (p *TranscriptionPipeline) Stop() error {
 		return fmt.Errorf("pipeline not active")
 	}
 	p.active = false
+	engine := p.engine
 	p.mu.Unlock()
 
-	// Flush any remaining audio in chunker
-	p.chunker.Flush()
+	// For Parakeet streaming: send final silence to flush any remaining words
+	if engine == "parakeet" {
+		// Send 2 seconds of silence to ensure everything is flushed
+		const flushSilenceSamples = 32000 // 2 seconds at 16kHz
+		silenceSamples := make([]float32, flushSilenceSamples)
 
-	// Flush any remaining audio in RNNoise buffer
-	remainingSamples := p.rnnoise.Flush()
-	if len(remainingSamples) > 0 {
-		p.chunker.ProcessSamples(remainingSamples)
-		p.chunker.Flush() // Flush again after adding RNNoise remainder
+		// Send the flush silence
+		text, err := p.asr.Transcribe(silenceSamples)
+		if text != "" {
+			result := TranscriptionResult{
+				Text:      text,
+				Timestamp: currentTimeMillis(),
+				Error:     err,
+			}
+			select {
+			case p.resultChan <- result:
+				p.log.Info("Final Parakeet flush result: %s", text)
+			default:
+				p.log.Warn("Final result dropped (channel full)")
+			}
+		}
+	} else {
+		// For Whisper: use traditional chunker flush
+		p.chunker.Flush()
+
+		// Flush any remaining audio in RNNoise buffer
+		remainingSamples := p.rnnoise.Flush()
+		if len(remainingSamples) > 0 {
+			p.chunker.ProcessSamples(remainingSamples)
+			p.chunker.Flush() // Flush again after adding RNNoise remainder
+		}
 	}
 
 	return nil
@@ -370,6 +438,10 @@ func (p *TranscriptionPipeline) Close() error {
 	defer p.mu.Unlock()
 
 	p.active = false
+
+	if p.stateTracker != nil {
+		p.stateTracker.Stop()
+	}
 
 	if p.asr != nil {
 		p.asr.Close()

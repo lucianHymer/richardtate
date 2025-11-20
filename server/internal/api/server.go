@@ -286,6 +286,37 @@ func (s *Server) sendTranscriptionResults(peerID string, peer *webrtc.PeerConnec
 	defer s.logger.Info("Stopped transcription result sender for peer %s", peerID)
 
 	for result := range pipeline.Results() {
+		// Handle state change messages
+		if result.IsStateChange {
+			s.logger.Info("Processing state change: is_processing=%v", result.IsProcessing)
+
+			// Create processing state message
+			stateData := protocol.ProcessingStateData{
+				IsProcessing: result.IsProcessing,
+			}
+
+			stateJSON, err := json.Marshal(stateData)
+			if err != nil {
+				s.logger.Error("Failed to marshal state data: %v", err)
+				continue
+			}
+
+			msg := &protocol.Message{
+				Type:      protocol.MessageTypeProcessingState,
+				Timestamp: result.Timestamp,
+				Data:      stateJSON,
+			}
+
+			// Send to client
+			if err := peer.SendMessage(msg); err != nil {
+				s.logger.Error("Failed to send state to peer %s: %v", peerID, err)
+				break
+			}
+
+			s.logger.Debug("Sent processing state to peer %s: is_processing=%v", peerID, result.IsProcessing)
+			continue
+		}
+
 		// Check if there was an error
 		if result.Error != nil {
 			s.logger.Error("Transcription error: %v", result.Error)

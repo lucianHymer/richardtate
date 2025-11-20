@@ -112,6 +112,11 @@ func (c *Config) Reload() error {
 	return nil
 }
 
+// GetFilePath returns the path to the config file
+func (c *Config) GetFilePath() string {
+	return c.filePath
+}
+
 // Default returns a default configuration
 func Default() *Config {
 	cfg := &Config{}

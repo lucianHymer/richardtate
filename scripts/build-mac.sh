@@ -276,6 +276,8 @@ if [ -n "$BUILD_TAGS" ]; then
 fi
 echo ""
 
+export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+
 # Build server
 echo "🔨 Building server..."
 cd "$PROJECT_ROOT/server"

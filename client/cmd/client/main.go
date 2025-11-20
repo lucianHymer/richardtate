@@ -6,21 +6,33 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/lucianHymer/streaming-transcription/client/internal/api"
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
-	"github.com/lucianHymer/streaming-transcription/client/internal/calibrate"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
 	"github.com/lucianHymer/streaming-transcription/client/internal/debuglog"
+	"github.com/lucianHymer/streaming-transcription/client/internal/ui"
 	"github.com/lucianHymer/streaming-transcription/client/internal/webrtc"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 	"github.com/lucianHymer/streaming-transcription/shared/protocol"
+)
+
+// Global instances (set in main)
+var (
+	globalLog      *logger.Logger
+	globalDebugLog *debuglog.Logger
+	globalUI       *ui.UI
+)
+
+// Session state for tracking complete transcriptions
+var (
+	sessionMu        sync.Mutex
+	sessionChunks    []string
+	sessionStart     time.Time
+	sessionRecording bool
 )
 
 // getDefaultConfigPath returns the XDG Base Directory compliant config path
@@ -35,8 +47,6 @@ func getDefaultConfigPath() string {
 func main() {
 	defaultConfigPath := getDefaultConfigPath()
 	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
-	calibrateMode := flag.Bool("calibrate", false, "Run VAD calibration wizard")
-	autoSave := flag.Bool("yes", false, "Auto-save calibration results without prompting")
 	flag.Parse()
 
 	// Load configuration
@@ -52,7 +62,7 @@ func main() {
 
 	// Initialize logger
 	log := logger.New(cfg.Client.Debug)
-	globalLog = log // Set global logger for message handler
+	globalLog = log
 
 	// Initialize debug log
 	debugLog, err := debuglog.New(cfg.Client.DebugLogPath)
@@ -63,57 +73,13 @@ func main() {
 	globalDebugLog = debugLog
 	log.Info("Debug log initialized at: %s", cfg.Client.DebugLogPath)
 
-	// Run calibration wizard if --calibrate flag is set
-	if *calibrateMode {
-		wizard, err := calibrate.NewWizard(cfg, log)
-		if err != nil {
-			log.Fatal("Failed to create calibration wizard: %v", err)
-		}
-
-		if err := wizard.Run(*configPath, *autoSave); err != nil {
-			log.Fatal("Calibration failed: %v", err)
-		}
-
-		return
-	}
-
-	log.Info("Starting streaming transcription client")
-	log.Info("Config: server_url=%s, api_bind_address=%s, debug=%v",
-		cfg.Server.URL, cfg.Client.APIBindAddress, cfg.Client.Debug)
+	log.Info("Starting streaming transcription client (native UI)")
 
 	// Create WebRTC client
 	webrtcClient := webrtc.New(cfg.Server.URL+"/api/v1/stream/signal", cfg, log, handleDataChannelMessage)
 
-	// Connect to server
-	log.Info("Connecting to server...")
-	if err := webrtcClient.Connect(); err != nil {
-		log.Fatal("Failed to connect to server: %v", err)
-	}
-
-	// Wait for connection to establish
-	log.Info("Waiting for DataChannel to open...")
-	for i := 0; i < 100; i++ {
-		if webrtcClient.IsConnected() {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if !webrtcClient.IsConnected() {
-		log.Fatal("Failed to establish DataChannel connection within timeout")
-	}
-
-	log.Info("DataChannel connected! Sending test ping...")
-
-	// Send a test ping
-	if err := webrtcClient.SendPing(); err != nil {
-		log.Error("Failed to send ping: %v", err)
-	} else {
-		log.Info("Ping sent successfully")
-	}
-
 	// Create audio capturer
-	capturer, err := audio.New(20, cfg.Audio.DeviceName, log) // Buffer up to 20 chunks (4 seconds at 200ms/chunk)
+	capturer, err := audio.New(20, cfg.Audio.DeviceName, log)
 	if err != nil {
 		log.Fatal("Failed to create audio capturer: %v", err)
 	}
@@ -125,8 +91,6 @@ func main() {
 	go func() {
 		defer audioWg.Done()
 		for chunk := range capturer.Chunks() {
-			// Send raw PCM data via WebRTC
-			// SendAudioChunk will handle the JSON marshaling
 			if err := webrtcClient.SendAudioChunk(chunk.Data, chunk.SampleRate, chunk.Channels); err != nil {
 				log.Error("Failed to send audio chunk: %v", err)
 			} else {
@@ -136,11 +100,69 @@ func main() {
 		log.Info("Audio sending goroutine stopped")
 	}()
 
-	// Create API server for control
-	apiServer := api.New(cfg.Client.APIBindAddress, log, cfg, *configPath)
-	globalAPIServer = apiServer // Set global for message handler
-	apiServer.SetHandlers(
+	// Connect to server in background with retry logic
+	go func() {
+		retryDelay := 1 * time.Second
+		maxRetryDelay := 30 * time.Second
+
+		for {
+			log.Info("Connecting to server...")
+			if err := webrtcClient.Connect(); err != nil {
+				log.Error("Failed to connect to server: %v (retrying in %v)", err, retryDelay)
+				time.Sleep(retryDelay)
+				// Exponential backoff
+				retryDelay *= 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+				continue
+			}
+
+			// Wait for connection to establish
+			log.Info("Waiting for DataChannel to open...")
+			connected := false
+			for i := 0; i < 100; i++ {
+				if webrtcClient.IsConnected() {
+					connected = true
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			if !connected {
+				log.Error("Failed to establish DataChannel connection within timeout (retrying in %v)", retryDelay)
+				time.Sleep(retryDelay)
+				retryDelay *= 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+				continue
+			}
+
+			log.Info("DataChannel connected!")
+
+			// Reset retry delay on successful connection
+			retryDelay = 1 * time.Second
+
+			// Send a test ping
+			if err := webrtcClient.SendPing(); err != nil {
+				log.Error("Failed to send ping: %v", err)
+			} else {
+				log.Info("Ping sent successfully")
+			}
+
+			// Connection established, exit retry loop
+			break
+		}
+	}()
+
+	// Create native UI
+	globalUI = ui.New(cfg, log)
+
+	// Set recording handlers
+	globalUI.SetHandlers(
 		func() error {
+			// Start recording
 			log.Info("Start recording requested")
 
 			// Initialize session tracking
@@ -166,6 +188,7 @@ func main() {
 			return nil
 		},
 		func() error {
+			// Stop recording
 			log.Info("Stop recording requested")
 
 			// Stop audio capture first
@@ -201,35 +224,16 @@ func main() {
 		},
 	)
 
-	// Start API server in goroutine
-	go func() {
-		log.Info("Starting control API on %s", cfg.Client.APIBindAddress)
-		if err := apiServer.Start(); err != nil {
-			log.Error("API server error: %v", err)
-		}
-	}()
+	log.Info("Starting native UI - press Ctrl+N to toggle recording, Ctrl+Alt+C for calibration")
 
-	// Wait for interrupt signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	// Run UI on main thread (blocks forever)
+	// This is required because macOS UI must run on main thread
+	globalUI.Run()
 
-	log.Info("Client running - press Ctrl+C to stop")
-	<-sigChan
-
-	log.Info("Shutting down...")
-
-	// Clean up
-	if err := apiServer.Stop(); err != nil {
-		log.Error("Error stopping API server: %v", err)
-	}
-
-	// Stop audio capture (this closes the chunks channel)
+	// Cleanup (won't reach here normally - UI runs forever)
 	if err := capturer.Close(); err != nil {
 		log.Error("Error closing audio capturer: %v", err)
 	}
-
-	// Wait for audio goroutine to finish
-	log.Info("Waiting for audio goroutine to finish...")
 	audioWg.Wait()
 
 	if err := webrtcClient.Close(); err != nil {
@@ -239,31 +243,26 @@ func main() {
 	log.Info("Client stopped")
 }
 
-// Global logger for message handler (set in main)
-var globalLog *logger.Logger
-
-// Global debug logger (set in main)
-var globalDebugLog *debuglog.Logger
-
-// Global API server for broadcasting transcriptions (set in main)
-var globalAPIServer *api.Server
-
-// Session state for tracking complete transcriptions
-var (
-	sessionMu        sync.Mutex
-	sessionChunks    []string
-	sessionStart     time.Time
-	sessionRecording bool
-)
-
 // handleDataChannelMessage handles messages received from the server
 func handleDataChannelMessage(msg *protocol.Message) {
 	messageLog := globalLog.With("message")
 
-	// This will be called when we receive messages from the server
 	switch msg.Type {
 	case protocol.MessageTypeControlPong:
-		messageLog.Info("✓ Received pong from server!")
+		messageLog.Info("Received pong from server!")
+
+	case protocol.MessageTypeProcessingState:
+		var state protocol.ProcessingStateData
+		if err := json.Unmarshal(msg.Data, &state); err != nil {
+			messageLog.Error("Failed to unmarshal processing state: %v", err)
+			return
+		}
+		messageLog.Info("Processing state: is_processing=%v", state.IsProcessing)
+
+		// Update UI processing state
+		if globalUI != nil {
+			globalUI.SetProcessingState(state.IsProcessing)
+		}
 
 	case protocol.MessageTypeTranscriptPartial:
 		var transcript protocol.TranscriptData
@@ -271,11 +270,11 @@ func handleDataChannelMessage(msg *protocol.Message) {
 			messageLog.Error("Failed to unmarshal partial transcript: %v", err)
 			return
 		}
-		fmt.Printf("📝 [partial] %s\n", transcript.Text)
+		fmt.Printf("[partial] %s\n", transcript.Text)
 
-		// Broadcast to WebSocket clients
-		if globalAPIServer != nil {
-			globalAPIServer.BroadcastTranscription(transcript.Text, false)
+		// Update UI - partial transcripts REPLACE the text (streaming sends full accumulated text)
+		if globalUI != nil {
+			globalUI.SetTranscription(transcript.Text)
 		}
 
 	case protocol.MessageTypeTranscriptFinal:
@@ -284,11 +283,14 @@ func handleDataChannelMessage(msg *protocol.Message) {
 			messageLog.Error("Failed to unmarshal final transcript: %v", err)
 			return
 		}
-		fmt.Printf("✅ %s\n", transcript.Text)
+		fmt.Printf("%s\n", transcript.Text)
 
-		// Broadcast to WebSocket clients
-		if globalAPIServer != nil {
-			globalAPIServer.BroadcastTranscription(transcript.Text, true)
+		// Update UI - final transcript REPLACES the text (it's the complete text for this chunk)
+		if globalUI != nil {
+			messageLog.Debug("Calling SetTranscription with %d chars", len(transcript.Text))
+			globalUI.SetTranscription(transcript.Text)
+		} else {
+			messageLog.Error("globalUI is nil!")
 		}
 
 		// Log chunk to debug log
@@ -296,14 +298,17 @@ func handleDataChannelMessage(msg *protocol.Message) {
 			messageLog.Error("Failed to log chunk to debug log: %v", err)
 		}
 
-		// Track session chunks
+		// Track session chunks - for final transcripts, we need to track only the NEW text
+		// Since Parakeet sends accumulated text, we track the full final text as one chunk
 		sessionMu.Lock()
 		if sessionRecording {
-			sessionChunks = append(sessionChunks, transcript.Text)
+			// Clear previous chunks and set to just this final text
+			// (The final contains all accumulated text from the stream)
+			sessionChunks = []string{transcript.Text}
 		}
 		sessionMu.Unlock()
 
 	default:
-		messageLog.Debug("Received message type: %s", string(msg.Type))
+		messageLog.Info("Received unknown message type: %s", string(msg.Type))
 	}
 }
