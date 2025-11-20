@@ -173,8 +173,9 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 
 		var samplesToSend []float32
 
-		// Parakeet internal buffer is 1 second = 16000 samples at 16kHz
-		const parakeetBufferSamples = 16000
+		// Parakeet internal buffer needs 1.5-2 seconds of silence to flush final words
+		// Using 1.5 seconds = 24000 samples at 16kHz as a balance
+		const parakeetBufferSamples = 24000 // 1.5 seconds
 
 		if hasSpeech {
 			// Speech chunk: prepend any accumulated silence, then send
@@ -197,7 +198,7 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 			// Accumulate silence
 			p.parakeetSilenceBuf = append(p.parakeetSilenceBuf, floatSamples...)
 
-			// Check if we've accumulated 1 second of silence (matches Parakeet's internal buffer)
+			// Check if we've accumulated 1.5 seconds of silence to flush Parakeet's buffer
 			if len(p.parakeetSilenceBuf) >= parakeetBufferSamples {
 				// Send accumulated silence to push Parakeet's buffer through
 				samplesToSend = p.parakeetSilenceBuf
@@ -339,16 +340,40 @@ func (p *TranscriptionPipeline) Stop() error {
 		return fmt.Errorf("pipeline not active")
 	}
 	p.active = false
+	engine := p.engine
 	p.mu.Unlock()
 
-	// Flush any remaining audio in chunker
-	p.chunker.Flush()
+	// For Parakeet streaming: send final silence to flush any remaining words
+	if engine == "parakeet" {
+		// Send 2 seconds of silence to ensure everything is flushed
+		const flushSilenceSamples = 32000 // 2 seconds at 16kHz
+		silenceSamples := make([]float32, flushSilenceSamples)
 
-	// Flush any remaining audio in RNNoise buffer
-	remainingSamples := p.rnnoise.Flush()
-	if len(remainingSamples) > 0 {
-		p.chunker.ProcessSamples(remainingSamples)
-		p.chunker.Flush() // Flush again after adding RNNoise remainder
+		// Send the flush silence
+		text, err := p.asr.Transcribe(silenceSamples)
+		if text != "" {
+			result := TranscriptionResult{
+				Text:      text,
+				Timestamp: currentTimeMillis(),
+				Error:     err,
+			}
+			select {
+			case p.resultChan <- result:
+				p.log.Info("Final Parakeet flush result: %s", text)
+			default:
+				p.log.Warn("Final result dropped (channel full)")
+			}
+		}
+	} else {
+		// For Whisper: use traditional chunker flush
+		p.chunker.Flush()
+
+		// Flush any remaining audio in RNNoise buffer
+		remainingSamples := p.rnnoise.Flush()
+		if len(remainingSamples) > 0 {
+			p.chunker.ProcessSamples(remainingSamples)
+			p.chunker.Flush() // Flush again after adding RNNoise remainder
+		}
 	}
 
 	return nil
