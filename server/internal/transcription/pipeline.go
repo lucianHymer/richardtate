@@ -125,9 +125,9 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		Logger:                 config.WhisperConfig.Logger,
 	})
 
-	// Create processing state tracker (1 second idle timeout)
+	// Create processing state tracker (3 second idle timeout)
 	pipeline.stateTracker = NewProcessingStateTracker(
-		1*time.Second,
+		3*time.Second,
 		func(isProcessing bool) {
 			// Send state change through result channel
 			stateResult := TranscriptionResult{
