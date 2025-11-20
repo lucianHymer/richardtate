@@ -13,16 +13,17 @@ import (
 // TranscriptionPipeline handles the complete audio-to-text pipeline
 // Flow: Raw Audio → RNNoise → VAD/Chunker → ASR (Whisper/Parakeet) → Results
 type TranscriptionPipeline struct {
-	asr        ASRTranscriber // ASR engine (Whisper or Parakeet)
-	engine     string         // Engine type: "whisper" or "parakeet"
-	rnnoise    *RNNoiseProcessor
-	chunker    *SmartChunker
-	vad        *VoiceActivityDetector // VAD for Parakeet gating (Whisper uses chunker's VAD)
-	resultChan chan TranscriptionResult
-	mu         sync.RWMutex
-	active     bool
-	debugWAV   bool // Enable WAV file debugging
-	log        *logger.ContextLogger
+	asr          ASRTranscriber // ASR engine (Whisper or Parakeet)
+	engine       string         // Engine type: "whisper" or "parakeet"
+	rnnoise      *RNNoiseProcessor
+	chunker      *SmartChunker
+	vad          *VoiceActivityDetector // VAD for Parakeet gating (Whisper uses chunker's VAD)
+	resultChan   chan TranscriptionResult
+	stateTracker *ProcessingStateTracker // Tracks processing state for loading indicator
+	mu           sync.RWMutex
+	active       bool
+	debugWAV     bool // Enable WAV file debugging
+	log          *logger.ContextLogger
 
 	// Parakeet silence accumulation state
 	parakeetWasSpeaking bool      // Was the previous chunk speech?
@@ -30,11 +31,15 @@ type TranscriptionPipeline struct {
 	parakeetSilenceSent bool      // Have we sent the silence flush after speech?
 }
 
-// TranscriptionResult holds transcription output
+// TranscriptionResult holds transcription output or state changes
 type TranscriptionResult struct {
 	Text      string
 	Timestamp int64 // Unix timestamp in milliseconds
 	Error     error
+
+	// Optional: State change notification (if IsStateChange is true, Text/Error are ignored)
+	IsStateChange bool
+	IsProcessing  bool // Processing state (only valid if IsStateChange is true)
 }
 
 // PipelineConfig holds configuration for the transcription pipeline
@@ -120,6 +125,26 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 		Logger:                 config.WhisperConfig.Logger,
 	})
 
+	// Create processing state tracker (1 second idle timeout)
+	pipeline.stateTracker = NewProcessingStateTracker(
+		1*time.Second,
+		func(isProcessing bool) {
+			// Send state change through result channel
+			stateResult := TranscriptionResult{
+				IsStateChange: true,
+				IsProcessing:  isProcessing,
+				Timestamp:     currentTimeMillis(),
+			}
+			select {
+			case pipeline.resultChan <- stateResult:
+				// State change sent
+			default:
+				log.Warn("State change dropped (channel full)")
+			}
+		},
+		config.WhisperConfig.Logger,
+	)
+
 	return pipeline, nil
 }
 
@@ -163,6 +188,13 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 			if p.vad.ProcessFrame(frame) {
 				hasSpeech = true
 			}
+		}
+
+		// Notify state tracker of VAD state
+		if hasSpeech {
+			p.stateTracker.NotifySpeechDetected()
+		} else {
+			p.stateTracker.NotifySilence()
 		}
 
 		// Convert int16 samples to float32 for ASR
@@ -227,6 +259,8 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 				p.log.InfoWithFields("Parakeet streaming result", map[string]interface{}{
 					"text": text,
 				})
+				// Notify state tracker of transcription activity
+				p.stateTracker.NotifyTranscription()
 			default:
 				p.log.Warn("Result dropped (channel full)")
 			}
@@ -239,6 +273,13 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 		// For Whisper: use traditional VAD/chunker approach
 		// The chunker will call transcribeChunk() when a chunk is ready
 		p.chunker.ProcessSamples(samples)
+
+		// Notify state tracker of VAD state from chunker
+		if p.chunker.IsSpeaking() {
+			p.stateTracker.NotifySpeechDetected()
+		} else {
+			p.stateTracker.NotifySilence()
+		}
 	}
 
 	return nil
@@ -282,6 +323,8 @@ func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
 				"text":     text,
 			})
 		}
+		// Notify state tracker of transcription activity
+		p.stateTracker.NotifyTranscription()
 	default:
 		p.log.WarnWithFields("Result dropped (channel full)", map[string]interface{}{
 			"duration": fmt.Sprintf("%.1fs", duration),
@@ -395,6 +438,10 @@ func (p *TranscriptionPipeline) Close() error {
 	defer p.mu.Unlock()
 
 	p.active = false
+
+	if p.stateTracker != nil {
+		p.stateTracker.Stop()
+	}
 
 	if p.asr != nil {
 		p.asr.Close()

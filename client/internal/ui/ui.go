@@ -263,3 +263,14 @@ func (u *UI) IsRecording() bool {
 	defer u.mu.Unlock()
 	return u.recording
 }
+
+// SetProcessingState updates the processing state (thread-safe)
+func (u *UI) SetProcessingState(processing bool) {
+	// Dispatch to main thread for UI update
+	Dispatch(func() {
+		window := u.app.GetWindow()
+		if window != nil {
+			window.SetProcessing(processing)
+		}
+	})
+}

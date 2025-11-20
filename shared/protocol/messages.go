@@ -19,6 +19,9 @@ const (
 	MessageTypeTranscriptPartial MessageType = "transcript.partial"
 	MessageTypeTranscriptFinal   MessageType = "transcript.final"
 
+	// Processing state
+	MessageTypeProcessingState MessageType = "processing.state"
+
 	// Errors
 	MessageTypeError MessageType = "error"
 )
@@ -54,6 +57,11 @@ type TranscriptData struct {
 	IsFinal    bool    `json:"is_final"`
 	Confidence float64 `json:"confidence,omitempty"`
 	SequenceID uint64  `json:"sequence_id,omitempty"`
+}
+
+// ProcessingStateData contains transcription processing state
+type ProcessingStateData struct {
+	IsProcessing bool `json:"is_processing"`
 }
 
 // ErrorData contains error information

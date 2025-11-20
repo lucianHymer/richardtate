@@ -245,6 +245,11 @@ func (c *SmartChunker) Reset() {
 	c.totalSpeech = 0
 }
 
+// IsSpeaking returns whether VAD is currently detecting speech
+func (c *SmartChunker) IsSpeaking() bool {
+	return c.vad.IsSpeaking()
+}
+
 // ChunkerStats holds statistics about the chunker
 type ChunkerStats struct {
 	BufferDuration time.Duration

@@ -251,6 +251,19 @@ func handleDataChannelMessage(msg *protocol.Message) {
 	case protocol.MessageTypeControlPong:
 		messageLog.Info("Received pong from server!")
 
+	case protocol.MessageTypeProcessingState:
+		var state protocol.ProcessingStateData
+		if err := json.Unmarshal(msg.Data, &state); err != nil {
+			messageLog.Error("Failed to unmarshal processing state: %v", err)
+			return
+		}
+		messageLog.Info("Processing state: is_processing=%v", state.IsProcessing)
+
+		// Update UI processing state
+		if globalUI != nil {
+			globalUI.SetProcessingState(state.IsProcessing)
+		}
+
 	case protocol.MessageTypeTranscriptPartial:
 		var transcript protocol.TranscriptData
 		if err := json.Unmarshal(msg.Data, &transcript); err != nil {

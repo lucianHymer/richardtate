@@ -7,9 +7,10 @@ import (
 
 // Window is a floating transcription preview
 type Window struct {
-	nsWindow  appkit.Window
-	textField appkit.TextField
-	text      string // Accumulated transcription
+	nsWindow     appkit.Window
+	textField    appkit.TextField
+	text         string // Accumulated transcription
+	isProcessing bool   // Whether transcription is currently processing
 }
 
 // NewWindow creates the floating preview window
@@ -87,11 +88,24 @@ func (w *Window) Hide() {
 // SetText updates the displayed text
 func (w *Window) SetText(text string) {
 	w.text = text
+	w.updateDisplay()
+}
+
+// updateDisplay refreshes the display with current text and processing state
+func (w *Window) updateDisplay() {
+	// Start with the current text
+	displayText := w.text
+
+	// Append "..." if processing
+	if w.isProcessing {
+		displayText += "..."
+	}
+
 	// Limit display to last 500 characters to prevent overflow
-	displayText := text
 	if len(displayText) > 500 {
 		displayText = "..." + displayText[len(displayText)-497:]
 	}
+
 	w.textField.SetStringValue(displayText)
 }
 
@@ -101,7 +115,7 @@ func (w *Window) AppendText(chunk string) {
 		w.text += " "
 	}
 	w.text += chunk
-	w.SetText(w.text)
+	w.updateDisplay()
 }
 
 // GetText returns accumulated text
@@ -112,5 +126,12 @@ func (w *Window) GetText() string {
 // Clear resets the text
 func (w *Window) Clear() {
 	w.text = ""
+	w.isProcessing = false
 	w.textField.SetStringValue("")
+}
+
+// SetProcessing updates the processing state and refreshes display
+func (w *Window) SetProcessing(processing bool) {
+	w.isProcessing = processing
+	w.updateDisplay()
 }
