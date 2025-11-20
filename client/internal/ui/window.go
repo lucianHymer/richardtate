@@ -40,11 +40,9 @@ func NewWindow() *Window {
 	// CRITICAL: Make window non-interactive (click-through)
 	nsWindow.SetIgnoresMouseEvents(true)
 
-	// Don't release on close - we manage lifecycle manually via Close()
-	// NOTE: Do NOT use objc.Retain() here - it sets up a GC finalizer that
-	// will call Release() even after we've manually closed the window,
-	// causing a double-free crash (SIGSEGV in Object_Release)
-	nsWindow.SetReleasedWhenClosed(false)
+	// Let AppKit and Go GC manage window lifecycle automatically
+	// Default behavior: window is released when closed, and Go finalizer
+	// cleans up properly when the wrapper is garbage collected
 
 	// Set dark background color
 	nsWindow.SetBackgroundColor(appkit.Color_ColorWithSRGBRedGreenBlueAlpha(0.1, 0.1, 0.1, 0.95))
@@ -115,11 +113,4 @@ func (w *Window) GetText() string {
 func (w *Window) Clear() {
 	w.text = ""
 	w.textField.SetStringValue("")
-}
-
-// Close releases the window resources
-func (w *Window) Close() {
-	if w.nsWindow.Ptr() != nil {
-		w.nsWindow.Close()
-	}
 }
