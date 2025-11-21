@@ -1,8 +1,32 @@
 # Swift Native UI Migration Plan
 
-**Status**: Proposal
+**Status**: ✅ Implemented (Debugging hotkeys)
 **Date**: 2025-11-21
 **Reason**: Replace DarwinKit-based UI with native Swift subprocess to eliminate GC segfaults
+
+## Current Status
+
+### ✅ Completed
+- Swift UI subprocess implementation (PreviewWindow, CalibrationWindow, main.swift)
+- Go IPC wrapper (subprocess.go with JSON protocol)
+- Code reorganization (ui/, platform/ packages)
+- Build system integration (build-mac.sh builds Swift UI)
+- Daemon installation (binaries copied to ~/.config/richardtate/bin/)
+- Accessibility permission checking
+
+### 🐛 Known Issues
+- **Hotkeys not firing**: Accessibility permissions granted, RegisterHotkeys called, but Ctrl+N does nothing
+  - Need to debug Carbon Events callback dispatch
+  - Possibly related to goroutine vs main thread execution
+
+### 📋 Testing Needed
+- End-to-end recording flow
+- Calibration wizard
+- Text pasting
+- Window show/hide
+- Process lifecycle
+
+## Implementation Summary
 
 ## Problem Statement
 
@@ -736,22 +760,27 @@ echo "Swift UI binary: bin/richardtate-ui"
 
 ## Migration Checklist
 
-- [ ] Create `client/ui-macos/` directory structure
-- [ ] Implement `PreviewWindow.swift`
-- [ ] Implement `CalibrationWindow.swift`
-- [ ] Implement `main.swift` with command loop
-- [ ] Create `Package.swift`
-- [ ] Build Swift binary and test standalone
-- [ ] Create `client/internal/swiftui/` package
-- [ ] Implement Go wrapper with IPC
-- [ ] Keep existing hotkey registration (Carbon Events CGO - this stays)
-- [ ] Update main.go to use Swift UI
-- [ ] Update message handlers
-- [ ] Update calibration flow
-- [ ] Test end-to-end
-- [ ] Remove `client/internal/ui/` (DarwinKit code)
-- [ ] Update build scripts
-- [ ] Update documentation
+- [x] Create `client/ui-macos/` directory structure
+- [x] Implement `PreviewWindow.swift`
+- [x] Implement `CalibrationWindow.swift`
+- [x] Implement `main.swift` with command loop
+- [x] Create `Package.swift`
+- [x] Build Swift binary and test standalone
+- [x] Create `client/internal/ui/` package (renamed from swiftui)
+- [x] Create `client/internal/platform/` package (for CGO)
+- [x] Implement Go wrapper with IPC (subprocess.go)
+- [x] Keep existing hotkey registration (Carbon Events CGO)
+- [x] Restore accessibility permission checking
+- [x] Update main.go to use new UI package
+- [x] Update message handlers (already compatible)
+- [x] Update calibration flow (in ui.go)
+- [ ] **Debug hotkeys not firing** ← Current issue
+- [ ] Test end-to-end recording
+- [ ] Test calibration wizard
+- [x] Remove old DarwinKit code
+- [x] Update build scripts (build-mac.sh)
+- [x] Update daemon installation (bin directory)
+- [ ] Final testing and documentation
 
 ## Testing Plan
 
@@ -791,13 +820,15 @@ If issues arise:
 3. **Multiple windows**: Should we support multiple preview windows (future)?
    - **Recommendation**: No, out of scope for this migration
 
-## Estimated Timeline
+## Actual Timeline
 
-- **Swift implementation**: 2-3 hours
-- **Go integration**: 1 hour
-- **Testing**: 1-2 hours
-- **Documentation**: 30 minutes
-- **Total**: 4-6 hours
+- **Swift implementation**: ✅ 1 hour (aided by spec)
+- **Go integration**: ✅ 1.5 hours (refactoring issues)
+- **Build/daemon setup**: ✅ 30 minutes
+- **Permission restoration**: ✅ 30 minutes
+- **Hotkey debugging**: 🔄 In progress
+- **Testing**: ⏳ Pending
+- **Total so far**: ~3.5 hours
 
 ## References
 
