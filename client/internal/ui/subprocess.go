@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// Window manages the Swift UI subprocess
-type Window struct {
+// Subprocess manages the Swift UI subprocess
+type Subprocess struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
@@ -21,8 +21,8 @@ type Window struct {
 	mu     sync.Mutex
 }
 
-// NewWindow spawns the Swift UI process
-func NewWindow(binaryPath string) (*Window, error) {
+// NewSubprocess spawns the Swift UI process
+func NewSubprocess(binaryPath string) (*Subprocess, error) {
 	// If binaryPath is empty, try to find the binary
 	if binaryPath == "" {
 		binaryPath = findBinary()
@@ -49,7 +49,7 @@ func NewWindow(binaryPath string) (*Window, error) {
 		return nil, fmt.Errorf("failed to start UI process: %w", err)
 	}
 
-	w := &Window{
+	w := &Subprocess{
 		cmd:    cmd,
 		stdin:  stdin,
 		stdout: stdout,

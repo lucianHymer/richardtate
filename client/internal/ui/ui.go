@@ -10,12 +10,13 @@ import (
 
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
+	"github.com/lucianHymer/streaming-transcription/client/internal/platform"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
 // UI provides a high-level interface to the Swift UI subprocess
 type UI struct {
-	window     *Window
+	subprocess *Subprocess
 	recording  bool
 	mu         sync.Mutex
 	config     *config.Config
@@ -42,19 +43,18 @@ type AudioStats struct {
 
 // New creates a new UI instance and starts the Swift subprocess
 func New(cfg *config.Config, log *logger.Logger, binaryPath string) (*UI, error) {
-	window, err := NewWindow(binaryPath)
+	subprocess, err := NewSubprocess(binaryPath)
 	if err != nil {
 		return nil, err
 	}
 
 	return &UI{
-		window:     window,
+		subprocess: subprocess,
 		config:     cfg,
-		logger:     log.With("swiftui"),
+		logger:     log.With("ui"),
 		baseLogger: log,
 	}, nil
 }
-
 // SetHandlers sets the start/stop recording handlers
 func (u *UI) SetHandlers(onStart, onStop func() error) {
 	u.onStart = onStart
@@ -145,7 +145,7 @@ func (u *UI) StartRecording() {
 
 	// Show window
 	if err := u.subprocess.Show(); err != nil {
-		u.logger.Error("Failed to show window: %v", err)
+		u.logger.Error("Failed to show subprocess: %v", err)
 	}
 }
 
@@ -162,7 +162,7 @@ func (u *UI) StopRecording() {
 
 	// Hide window
 	if err := u.subprocess.Hide(); err != nil {
-		u.logger.Error("Failed to hide window: %v", err)
+		u.logger.Error("Failed to hide subprocess: %v", err)
 	}
 
 	u.mu.Lock()
