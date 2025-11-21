@@ -281,24 +281,62 @@ export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
 # Build server
 echo "🔨 Building server..."
 cd "$PROJECT_ROOT/server"
-go build $BUILD_TAGS -o cmd/server/server ./cmd/server
-SERVER_SIZE=$(du -h cmd/server/server | cut -f1)
-echo "✅ Server built: server/cmd/server/server ($SERVER_SIZE)"
+go build $BUILD_TAGS -o cmd/server/richardtate-server ./cmd/server
+SERVER_SIZE=$(du -h cmd/server/richardtate-server | cut -f1)
+echo "✅ Server built: server/cmd/server/richardtate-server ($SERVER_SIZE)"
 if [ "$ENABLE_RNNOISE" = true ]; then
     echo "   🎯 RNNoise enabled - noise suppression active!"
 fi
 echo ""
 
+# Build Swift UI
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Building Swift UI..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [ -d "$PROJECT_ROOT/client/ui-macos" ]; then
+    cd "$PROJECT_ROOT/client/ui-macos"
+    if swift build -c release; then
+        echo "✅ Swift UI built successfully"
+        mkdir -p "$PROJECT_ROOT/bin"
+        cp .build/release/richardtate-ui "$PROJECT_ROOT/bin/"
+        echo "✅ Swift UI binary copied to bin/richardtate-ui"
+    else
+        echo "❌ Swift UI build failed"
+        exit 1
+    fi
+    cd "$PROJECT_ROOT"
+else
+    echo "⚠️  Swift UI directory not found (client/ui-macos)"
+    echo "   Skipping Swift UI build"
+fi
+
 # Build client
+echo ""
 echo "🔨 Building client..."
 cd "$PROJECT_ROOT/client"
-go build -o cmd/client/client ./cmd/client
-CLIENT_SIZE=$(du -h cmd/client/client | cut -f1)
-echo "✅ Client built: client/cmd/client/client ($CLIENT_SIZE)"
+go build -o cmd/client/richardtate-client ./cmd/client
+CLIENT_SIZE=$(du -h cmd/client/richardtate-client | cut -f1)
+echo "✅ Client built: client/cmd/client/richardtate-client ($CLIENT_SIZE)"
 echo ""
 
 cd "$PROJECT_ROOT"
-echo "✅ Build complete!"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Build Complete!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Built with:"
+echo "  - Whisper.cpp: ✅ enabled"
+echo "  - RNNoise: $([ "$ENABLE_RNNOISE" = true ] && echo '✅ enabled' || echo '❌ disabled')"
+echo "  - Parakeet MLX: $PARAKEET_STATUS"
+echo "  - Swift UI: $([ -f "$PROJECT_ROOT/bin/richardtate-ui" ] && echo '✅ enabled' || echo '❌ not found')"
+echo ""
+echo "Binaries:"
+echo "  - Server: server/cmd/server/richardtate-server"
+echo "  - Client: client/cmd/client/richardtate-client"
+echo "  - Swift UI: bin/richardtate-ui"
 echo ""
 
 # Always create config directory and copy configs if they don't exist
@@ -331,6 +369,21 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     # Create logs directory
     LOGS_DIR="$CONFIG_DIR/logs"
     mkdir -p "$LOGS_DIR"
+
+    # Create bin directory for binaries
+    BIN_DIR="$CONFIG_DIR/bin"
+    mkdir -p "$BIN_DIR"
+
+    # Copy binaries to config bin directory (where daemon will find them)
+    echo "📦 Installing binaries..."
+    cp "$PROJECT_ROOT/server/cmd/server/richardtate-server" "$BIN_DIR/"
+    cp "$PROJECT_ROOT/client/cmd/client/richardtate-client" "$BIN_DIR/"
+    if [ -f "$PROJECT_ROOT/bin/richardtate-ui" ]; then
+        cp "$PROJECT_ROOT/bin/richardtate-ui" "$BIN_DIR/"
+        echo "✅ Installed: server, client, and Swift UI"
+    else
+        echo "✅ Installed: server and client (Swift UI not found)"
+    fi
 
     # Install launchd plists
     PLIST_DIR="$HOME/Library/LaunchAgents"

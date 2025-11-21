@@ -1,4 +1,9 @@
 # Binaries
+/server/cmd/server/richardtate-server
+/client/cmd/client/richardtate-client
+client/richardtate-client
+server/richardtate-server
+# Legacy binary names (in case they exist)
 /server/cmd/server/server
 /client/cmd/client/client
 client/client

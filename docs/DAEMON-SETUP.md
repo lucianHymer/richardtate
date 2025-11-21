@@ -1,6 +1,6 @@
-# Richard Tate Daemon Setup (macOS)
+# richardtate Daemon Setup (macOS)
 
-This document explains how the Richard Tate services run as background daemons on macOS using launchd.
+This document explains how the richardtate services run as background daemons on macOS using launchd.
 
 ## Overview
 
@@ -40,14 +40,14 @@ richardtate logs client
 
 ### Server Service
 - **Label**: `com.richardtate.server`
-- **Binary**: `<project>/server/server`
+- **Binary**: `<project>/server/richardtate-server`
 - **Config**: `~/.config/richardtate/server.yaml`
 - **Log**: `~/.config/richardtate/logs/server.log`
 - **Error Log**: `~/.config/richardtate/logs/server.err`
 
 ### Client Service
 - **Label**: `com.richardtate.client`
-- **Binary**: `<project>/client/client`
+- **Binary**: `<project>/client/richardtate-client`
 - **Config**: `~/.config/richardtate/client.yaml`
 - **Log**: `~/.config/richardtate/logs/client.log`
 - **Error Log**: `~/.config/richardtate/logs/client.err`
@@ -84,8 +84,8 @@ launchctl list com.richardtate.client
 
 2. **Check if binaries exist:**
    ```bash
-   ls <project>/server/server
-   ls <project>/client/client
+   ls <project>/server/richardtate-server
+   ls <project>/client/richardtate-client
    ```
 
 3. **Check logs for errors:**
@@ -116,11 +116,11 @@ launchctl list com.richardtate.client
 3. **Try running manually to see errors:**
    ```bash
    cd <project>/server
-   ./server --config ~/.config/richardtate/server.yaml
+   ./richardtate-server --config ~/.config/richardtate/server.yaml
 
    # In another terminal
    cd <project>/client
-   ./client --config ~/.config/richardtate/client.yaml
+   ./richardtate-client --config ~/.config/richardtate/client.yaml
    ```
 
 ### Updating binaries

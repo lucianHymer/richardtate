@@ -1,5 +1,5 @@
 #!/bin/bash
-# Richard Tate - Control script for managing server and client daemons
+# richardtate - Control script for managing server and client daemons
 
 set -e
 
@@ -32,7 +32,7 @@ error() {
 
 check_installed() {
     if [ ! -f "$PLIST_DIR/$SERVER_LABEL.plist" ] || [ ! -f "$PLIST_DIR/$CLIENT_LABEL.plist" ]; then
-        error "Richard Tate services not installed"
+        error "richardtate services not installed"
         echo "  Run: scripts/install-mac.sh"
         exit 1
     fi
@@ -40,7 +40,7 @@ check_installed() {
 
 cmd_start() {
     check_installed
-    info "Starting Richard Tate services..."
+    info "Starting richardtate services..."
 
     launchctl load "$PLIST_DIR/$SERVER_LABEL.plist" 2>/dev/null || true
     launchctl load "$PLIST_DIR/$CLIENT_LABEL.plist" 2>/dev/null || true
@@ -58,7 +58,7 @@ cmd_start() {
 
 cmd_stop() {
     check_installed
-    info "Stopping Richard Tate services..."
+    info "Stopping richardtate services..."
 
     launchctl unload "$PLIST_DIR/$SERVER_LABEL.plist" 2>/dev/null || true
     launchctl unload "$PLIST_DIR/$CLIENT_LABEL.plist" 2>/dev/null || true
@@ -67,7 +67,7 @@ cmd_stop() {
 }
 
 cmd_restart() {
-    info "Restarting Richard Tate services..."
+    info "Restarting richardtate services..."
     cmd_stop
     sleep 1
     cmd_start
@@ -75,7 +75,7 @@ cmd_restart() {
 
 cmd_status() {
     check_installed
-    echo "Richard Tate Service Status:"
+    echo "richardtate Service Status:"
     echo ""
 
     if launchctl list | grep -q "$SERVER_LABEL"; then
@@ -119,7 +119,7 @@ cmd_logs() {
 
 cmd_help() {
     cat << EOF
-Richard Tate - Voice Transcription Control
+richardtate - Voice Transcription Control
 
 Usage: richardtate <command> [options]
 

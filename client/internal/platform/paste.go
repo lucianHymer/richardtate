@@ -1,4 +1,4 @@
-package ui
+package platform
 
 /*
 #cgo CFLAGS: -x objective-c
