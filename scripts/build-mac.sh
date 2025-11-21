@@ -370,6 +370,21 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     LOGS_DIR="$CONFIG_DIR/logs"
     mkdir -p "$LOGS_DIR"
 
+    # Create bin directory for binaries
+    BIN_DIR="$CONFIG_DIR/bin"
+    mkdir -p "$BIN_DIR"
+
+    # Copy binaries to config bin directory (where daemon will find them)
+    echo "📦 Installing binaries..."
+    cp "$PROJECT_ROOT/server/cmd/server/richardtate-server" "$BIN_DIR/"
+    cp "$PROJECT_ROOT/client/cmd/client/richardtate-client" "$BIN_DIR/"
+    if [ -f "$PROJECT_ROOT/bin/richardtate-ui" ]; then
+        cp "$PROJECT_ROOT/bin/richardtate-ui" "$BIN_DIR/"
+        echo "✅ Installed: server, client, and Swift UI"
+    else
+        echo "✅ Installed: server and client (Swift UI not found)"
+    fi
+
     # Install launchd plists
     PLIST_DIR="$HOME/Library/LaunchAgents"
     mkdir -p "$PLIST_DIR"

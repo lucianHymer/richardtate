@@ -71,16 +71,25 @@ func NewSubprocess(binaryPath string) (*Subprocess, error) {
 // findBinary locates the richardtate-ui binary
 func findBinary() string {
 	// Try locations in order:
-	// 1. Same directory as client binary (production deployment)
-	// 2. Project bin/ directory (build-mac.sh output)
-	// 3. Development build location (ui-macos/.build/release/)
-	// 4. System install (/usr/local/bin)
+	// 1. Same directory as client binary (daemon install location)
+	// 2. ~/.config/richardtate/bin/ (daemon install)
+	// 3. Project bin/ directory (build-mac.sh output)
+	// 4. Development build location (ui-macos/.build/release/)
+	// 5. System install (/usr/local/bin)
 
 	execPath, err := os.Executable()
 	if err == nil {
 		// Same directory as client binary
 		dir := filepath.Dir(execPath)
 		path := filepath.Join(dir, "richardtate-ui")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	// Daemon install location (~/.config/richardtate/bin/)
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		path := filepath.Join(homeDir, ".config", "richardtate", "bin", "richardtate-ui")
 		if _, err := os.Stat(path); err == nil {
 			return path
 		}
