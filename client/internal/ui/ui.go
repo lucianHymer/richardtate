@@ -64,6 +64,16 @@ func (u *UI) SetHandlers(onStart, onStop func() error) {
 // Run registers hotkeys and keeps the process alive
 // This is called for compatibility with the old UI interface
 func (u *UI) Run() {
+	// Check accessibility permissions first (required for hotkeys and pasting)
+	if !platform.EnsureAccessibilityPermissions() {
+		u.logger.Info("Waiting for accessibility permissions...")
+		platform.WaitForAccessibilityPermissions(func() {
+			u.logger.Info("⚠️  Please grant accessibility permissions in System Preferences")
+			u.logger.Info("   (Privacy & Security → Accessibility → richardtate-client)")
+		})
+		u.logger.Info("✅ Accessibility permissions granted!")
+	}
+
 	// Initialize clipboard
 	if err := platform.InitClipboard(); err != nil {
 		u.logger.Error("Failed to initialize clipboard: %v", err)
