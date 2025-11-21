@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,9 @@ func getDefaultConfigPath() string {
 }
 
 func main() {
+	// Lock main thread (required for Cocoa event loop)
+	runtime.LockOSThread()
+
 	defaultConfigPath := getDefaultConfigPath()
 	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
 	flag.Parse()
