@@ -65,12 +65,12 @@ func (u *UI) SetHandlers(onStart, onStop func() error) {
 // This is called for compatibility with the old UI interface
 func (u *UI) Run() {
 	// Initialize clipboard
-	if err := InitClipboard(); err != nil {
+	if err := platform.InitClipboard(); err != nil {
 		u.logger.Error("Failed to initialize clipboard: %v", err)
 	}
 
 	// Register global hotkeys
-	RegisterHotkeys(u.toggleRecording, u.handleCalibration)
+	platform.RegisterHotkeys(u.toggleRecording, u.handleCalibration)
 	u.logger.Info("Hotkeys registered (Ctrl+N = toggle recording, Ctrl+Alt+C = calibration)")
 
 	// Keep process alive
