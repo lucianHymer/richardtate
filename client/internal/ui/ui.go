@@ -83,9 +83,10 @@ func (u *UI) Run() {
 	platform.RegisterHotkeys(u.toggleRecording, u.handleCalibration)
 	u.logger.Info("Hotkeys registered (Ctrl+N = toggle recording, Ctrl+Alt+C = calibration)")
 
-	// Keep process alive
-	u.logger.Info("Swift UI subprocess running")
-	select {} // Block forever
+	// Run Cocoa event loop (required for Carbon Events hotkeys to work)
+	// This blocks forever on the main thread
+	u.logger.Info("Starting event loop...")
+	platform.RunEventLoop()
 }
 
 // toggleRecording handles the Ctrl+N hotkey
