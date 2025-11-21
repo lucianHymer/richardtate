@@ -6,16 +6,16 @@ build: server client
 
 server:
 	@echo "Building server..."
-	cd server && go build -o cmd/server/server ./cmd/server
+	cd server && go build -o cmd/server/richardtate-server ./cmd/server
 
 client:
 	@echo "Building client..."
-	cd client && go build -o cmd/client/client ./cmd/client
+	cd client && go build -o cmd/client/richardtate-client ./cmd/client
 
 clean:
 	@echo "Cleaning..."
-	rm -f server/cmd/server/server
-	rm -f client/cmd/client/client
+	rm -f server/cmd/server/richardtate-server
+	rm -f client/cmd/client/richardtate-client
 
 test:
 	@echo "Running tests..."

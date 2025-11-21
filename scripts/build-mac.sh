@@ -281,9 +281,9 @@ export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
 # Build server
 echo "🔨 Building server..."
 cd "$PROJECT_ROOT/server"
-go build $BUILD_TAGS -o cmd/server/server ./cmd/server
-SERVER_SIZE=$(du -h cmd/server/server | cut -f1)
-echo "✅ Server built: server/cmd/server/server ($SERVER_SIZE)"
+go build $BUILD_TAGS -o cmd/server/richardtate-server ./cmd/server
+SERVER_SIZE=$(du -h cmd/server/richardtate-server | cut -f1)
+echo "✅ Server built: server/cmd/server/richardtate-server ($SERVER_SIZE)"
 if [ "$ENABLE_RNNOISE" = true ]; then
     echo "   🎯 RNNoise enabled - noise suppression active!"
 fi
@@ -292,9 +292,9 @@ echo ""
 # Build client
 echo "🔨 Building client..."
 cd "$PROJECT_ROOT/client"
-go build -o cmd/client/client ./cmd/client
-CLIENT_SIZE=$(du -h cmd/client/client | cut -f1)
-echo "✅ Client built: client/cmd/client/client ($CLIENT_SIZE)"
+go build -o cmd/client/richardtate-client ./cmd/client
+CLIENT_SIZE=$(du -h cmd/client/richardtate-client | cut -f1)
+echo "✅ Client built: client/cmd/client/richardtate-client ($CLIENT_SIZE)"
 echo ""
 
 cd "$PROJECT_ROOT"
