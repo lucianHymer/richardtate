@@ -14,6 +14,7 @@ import (
 	"github.com/lucianHymer/streaming-transcription/client/internal/audio"
 	"github.com/lucianHymer/streaming-transcription/client/internal/config"
 	"github.com/lucianHymer/streaming-transcription/client/internal/debuglog"
+	"github.com/lucianHymer/streaming-transcription/client/internal/platform"
 	"github.com/lucianHymer/streaming-transcription/client/internal/ui"
 	"github.com/lucianHymer/streaming-transcription/client/internal/webrtc"
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
@@ -156,8 +157,12 @@ func main() {
 		}
 	}()
 
-	// Create native UI
-	globalUI = ui.New(cfg, log)
+	// Create native UI (Swift subprocess)
+	globalUI, err = ui.New(cfg, log, "")
+	if err != nil {
+		log.Fatal("Failed to create UI: %v", err)
+	}
+	defer globalUI.Close()
 
 	// Set recording handlers
 	globalUI.SetHandlers(
@@ -212,6 +217,12 @@ func main() {
 					log.Info("Session logged: %d chunks, %.1f seconds, %d chars",
 						len(sessionChunks), duration, len(fullText))
 				}
+
+				// Paste the text (in goroutine to not block)
+				go func() {
+					platform.PasteText(fullText)
+					log.Info("Text pasted: %d chars", len(fullText))
+				}()
 			}
 
 			// Send control stop message to server

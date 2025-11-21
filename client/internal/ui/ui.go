@@ -2,7 +2,9 @@ package ui
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -11,12 +13,11 @@ import (
 	"github.com/lucianHymer/streaming-transcription/shared/logger"
 )
 
-// UI manages the native macOS interface
+// UI provides a high-level interface to the Swift UI subprocess
 type UI struct {
-	app         *App
-	recording   bool
-	mu          sync.Mutex
-
+	window     *Window
+	recording  bool
+	mu         sync.Mutex
 	config     *config.Config
 	logger     *logger.ContextLogger
 	baseLogger *logger.Logger
@@ -24,15 +25,34 @@ type UI struct {
 	// Callbacks
 	onStart func() error
 	onStop  func() error
+
+	// For calibration
+	calibrationInProgress bool
 }
 
-// New creates a new UI instance
-func New(cfg *config.Config, log *logger.Logger) *UI {
-	return &UI{
-		config:     cfg,
-		logger:     log.With("ui"),
-		baseLogger: log,
+// AudioStats represents audio energy statistics
+type AudioStats struct {
+	Min   float64
+	Max   float64
+	Avg   float64
+	P5    float64
+	P95   float64
+	Count int
+}
+
+// New creates a new UI instance and starts the Swift subprocess
+func New(cfg *config.Config, log *logger.Logger, binaryPath string) (*UI, error) {
+	window, err := NewWindow(binaryPath)
+	if err != nil {
+		return nil, err
 	}
+
+	return &UI{
+		window:     window,
+		config:     cfg,
+		logger:     log.With("swiftui"),
+		baseLogger: log,
+	}, nil
 }
 
 // SetHandlers sets the start/stop recording handlers
@@ -41,40 +61,185 @@ func (u *UI) SetHandlers(onStart, onStop func() error) {
 	u.onStop = onStop
 }
 
-// Run starts the UI (blocks on main thread)
+// Run registers hotkeys and keeps the process alive
+// This is called for compatibility with the old UI interface
 func (u *UI) Run() {
-	// Check accessibility permissions first
-	if !EnsureAccessibilityPermissions() {
-		u.logger.Info("Waiting for accessibility permissions...")
-		WaitForAccessibilityPermissions(func() {
-			u.logger.Info("Please grant accessibility permissions in System Preferences")
-		})
-		u.logger.Info("Accessibility permissions granted!")
-	}
-
 	// Initialize clipboard
 	if err := InitClipboard(); err != nil {
-		panic("Failed to initialize clipboard: " + err.Error())
+		u.logger.Error("Failed to initialize clipboard: %v", err)
 	}
 
-	// Create app with initialization callback
-	u.app = NewApp()
+	// Register global hotkeys
+	RegisterHotkeys(u.toggleRecording, u.handleCalibration)
+	u.logger.Info("Hotkeys registered (Ctrl+N = toggle recording, Ctrl+Alt+C = calibration)")
 
-	// Set up hotkey handlers (these are stored on App, not windows)
-	u.app.SetHandlers(u.toggleRecording, u.showCalibration)
-
-	// Set calibration handlers to be called after windows are created
-	u.app.SetCalibrationHandlers(
-		u.recordForCalibration,
-		u.saveCalibrationThreshold,
-	)
-
-	u.app.Run() // Blocks forever
+	// Keep process alive
+	u.logger.Info("Swift UI subprocess running")
+	select {} // Block forever
 }
 
-// showCalibration opens the calibration wizard
-func (u *UI) showCalibration() {
-	u.app.GetCalibration().Show()
+// toggleRecording handles the Ctrl+N hotkey
+func (u *UI) toggleRecording() {
+	u.mu.Lock()
+	isRecording := u.recording
+	u.mu.Unlock()
+
+	if isRecording {
+		u.StopRecording()
+	} else {
+		u.StartRecording()
+	}
+}
+
+// handleCalibration handles the Ctrl+Alt+C hotkey
+func (u *UI) handleCalibration() {
+	u.logger.Info("Calibration hotkey pressed")
+	go u.ShowCalibration() // Run in goroutine to not block hotkey handler
+}
+
+// Close terminates the Swift UI subprocess
+func (u *UI) Close() error {
+	return u.subprocess.Close()
+}
+
+// SetTranscription updates the transcription text
+func (u *UI) SetTranscription(text string) {
+	if err := u.subprocess.SetText(text); err != nil {
+		u.logger.Error("Failed to set transcription: %v", err)
+	}
+}
+
+// SetProcessingState updates the processing indicator
+func (u *UI) SetProcessingState(processing bool) {
+	if err := u.subprocess.SetProcessing(processing); err != nil {
+		u.logger.Error("Failed to set processing state: %v", err)
+	}
+}
+
+// IsRecording returns current recording state
+func (u *UI) IsRecording() bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.recording
+}
+
+// StartRecording starts a recording session (called by hotkey handler)
+func (u *UI) StartRecording() {
+	u.mu.Lock()
+	u.recording = true
+	u.mu.Unlock()
+
+	// Clear previous text
+	u.subprocess.ClearText()
+
+	// Call start handler
+	if u.onStart != nil {
+		if err := u.onStart(); err != nil {
+			u.logger.Error("Failed to start recording: %v", err)
+			u.mu.Lock()
+			u.recording = false
+			u.mu.Unlock()
+			return
+		}
+	}
+
+	// Show window
+	if err := u.subprocess.Show(); err != nil {
+		u.logger.Error("Failed to show window: %v", err)
+	}
+}
+
+// StopRecording stops the recording session (called by hotkey handler)
+// Note: Text accumulation happens in main.go's message handler
+// This method is called when the user presses Ctrl+N to stop recording
+func (u *UI) StopRecording() {
+	// Call stop handler
+	if u.onStop != nil {
+		if err := u.onStop(); err != nil {
+			u.logger.Error("Failed to stop recording: %v", err)
+		}
+	}
+
+	// Hide window
+	if err := u.subprocess.Hide(); err != nil {
+		u.logger.Error("Failed to hide window: %v", err)
+	}
+
+	u.mu.Lock()
+	u.recording = false
+	u.mu.Unlock()
+}
+
+// GetText would be used to retrieve accumulated text, but in the new architecture,
+// text is accumulated in main.go's session state, not in the UI
+// This method is here for compatibility but may not be needed
+
+// ShowCalibration shows the calibration wizard
+func (u *UI) ShowCalibration() error {
+	u.mu.Lock()
+	u.calibrationInProgress = true
+	u.mu.Unlock()
+
+	// Show calibration window
+	if err := u.subprocess.ShowCalibration(); err != nil {
+		return err
+	}
+
+	// Step 1: Background recording
+	if err := u.subprocess.SetCalibrationStep(1); err != nil {
+		return err
+	}
+	if err := u.subprocess.SetCalibrationMessage("Stay silent for 5 seconds..."); err != nil {
+		return err
+	}
+
+	// Record background
+	u.logger.Info("Recording background noise...")
+	bgStats := u.recordForCalibration(5 * time.Second)
+	if bgStats == nil {
+		return fmt.Errorf("failed to record background")
+	}
+
+	// Step 2: Speech recording
+	if err := u.subprocess.SetCalibrationStep(2); err != nil {
+		return err
+	}
+	if err := u.subprocess.SetCalibrationMessage("Speak normally for 5 seconds..."); err != nil {
+		return err
+	}
+
+	// Record speech
+	u.logger.Info("Recording speech...")
+	speechStats := u.recordForCalibration(5 * time.Second)
+	if speechStats == nil {
+		return fmt.Errorf("failed to record speech")
+	}
+
+	// Calculate recommended threshold
+	recommended := (bgStats.P95 + speechStats.P5) / 2
+
+	// Step 3: Show results
+	if err := u.subprocess.SetCalibrationStep(3); err != nil {
+		return err
+	}
+	if err := u.subprocess.SetCalibrationStats(bgStats.P95, speechStats.P5, recommended); err != nil {
+		return err
+	}
+
+	// Save threshold
+	if err := u.saveCalibrationThreshold(recommended); err != nil {
+		u.logger.Error("Failed to save threshold: %v", err)
+	}
+
+	// Auto-hide after 3 seconds
+	time.Sleep(3 * time.Second)
+	u.subprocess.HideCalibration()
+
+	u.mu.Lock()
+	u.calibrationInProgress = false
+	u.mu.Unlock()
+
+	return nil
 }
 
 // recordForCalibration captures audio and returns energy stats
@@ -84,9 +249,30 @@ func (u *UI) recordForCalibration(duration time.Duration) *AudioStats {
 		u.logger.Error("Failed to create audio capturer: %v", err)
 		return nil
 	}
+	defer capturer.Close()
 
 	var energies []float64
 	done := make(chan struct{})
+
+	// Update progress bar
+	startTime := time.Now()
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				elapsed := time.Since(startTime)
+				progress := elapsed.Seconds() / duration.Seconds()
+				if progress >= 1.0 {
+					return
+				}
+				u.subprocess.SetCalibrationProgress(progress)
+			case <-done:
+				return
+			}
+		}
+	}()
 
 	go func() {
 		for chunk := range capturer.Chunks() {
@@ -106,26 +292,9 @@ func (u *UI) recordForCalibration(duration time.Duration) *AudioStats {
 	return CalculateAudioStats(energies)
 }
 
-// bytesToInt16 converts a byte slice to int16 samples (little-endian)
-func bytesToInt16(data []byte) []int16 {
-	samples := make([]int16, len(data)/2)
-	for i := 0; i < len(samples); i++ {
-		samples[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
-	}
-	return samples
-}
-
-// calculateEnergy computes RMS energy of audio samples
-func calculateEnergy(samples []int16) float64 {
-	var sum float64
-	for _, s := range samples {
-		sum += float64(s) * float64(s)
-	}
-	return math.Sqrt(sum / float64(len(samples)))
-}
-
 // saveCalibrationThreshold saves the threshold to config
 func (u *UI) saveCalibrationThreshold(threshold float64) error {
+	// Import the config package's update function
 	err := config.UpdateVADThreshold(u.config.GetFilePath(), threshold)
 	if err != nil {
 		return err
@@ -140,137 +309,59 @@ func (u *UI) saveCalibrationThreshold(threshold float64) error {
 	return nil
 }
 
-// toggleRecording handles hotkey press
-func (u *UI) toggleRecording() {
-	u.logger.Info("Hotkey pressed")
+// Helper functions
 
-	// Check current state with lock
-	u.mu.Lock()
-	isRecording := u.recording
-	u.mu.Unlock()
+func bytesToInt16(data []byte) []int16 {
+	samples := make([]int16, len(data)/2)
+	for i := 0; i < len(samples); i++ {
+		samples[i] = int16(binary.LittleEndian.Uint16(data[i*2:]))
+	}
+	return samples
+}
 
-	u.logger.Info("Recording state: %v", isRecording)
-	if isRecording {
-		u.stopRecording()
-	} else {
-		u.startRecording()
+func calculateEnergy(samples []int16) float64 {
+	var sum float64
+	for _, s := range samples {
+		sum += float64(s) * float64(s)
+	}
+	return math.Sqrt(sum / float64(len(samples)))
+}
+
+// CalculateAudioStats computes statistical metrics from energy values
+func CalculateAudioStats(energies []float64) *AudioStats {
+	if len(energies) == 0 {
+		return nil
+	}
+
+	// Sort for percentile calculation
+	sorted := make([]float64, len(energies))
+	copy(sorted, energies)
+	sort.Float64s(sorted)
+
+	// Calculate statistics
+	var sum float64
+	min := sorted[0]
+	max := sorted[len(sorted)-1]
+	for _, e := range energies {
+		sum += e
+	}
+	avg := sum / float64(len(energies))
+
+	// Percentiles
+	p5 := percentile(sorted, 0.05)
+	p95 := percentile(sorted, 0.95)
+
+	return &AudioStats{
+		Min:   min,
+		Max:   max,
+		Avg:   avg,
+		P5:    p5,
+		P95:   p95,
+		Count: len(energies),
 	}
 }
 
-func (u *UI) startRecording() {
-	u.logger.Info("startRecording called")
-
-	// Recreate window fresh each time
-	u.app.RecreateWindow()
-	window := u.app.GetWindow()
-	if window == nil {
-		u.logger.Error("Window not initialized")
-		return
-	}
-	u.logger.Info("Window recreated")
-
-	// Set recording state
-	u.mu.Lock()
-	u.recording = true
-	u.mu.Unlock()
-	u.logger.Info("Recording state set to true")
-
-	// Call handler FIRST (audio start), then show window
-	if u.onStart != nil {
-		u.logger.Info("Calling onStart handler")
-		if err := u.onStart(); err != nil {
-			u.logger.Error("Recording start failed: %v", err)
-			u.mu.Lock()
-			u.recording = false
-			u.mu.Unlock()
-			return
-		}
-		u.logger.Info("onStart handler completed successfully")
-	}
-
-	// Show window AFTER audio is started
-	// Small delay to let runloop process
-	time.Sleep(50 * time.Millisecond)
-	u.logger.Info("Calling Show()")
-	window.Show()
-	u.logger.Info("Window.Show() called")
-}
-
-func (u *UI) stopRecording() {
-	window := u.app.GetWindow()
-	if window == nil {
-		u.logger.Error("Window not initialized")
-		u.mu.Lock()
-		u.recording = false
-		u.mu.Unlock()
-		return
-	}
-
-	// Get accumulated text
-	text := window.GetText()
-
-	// Call handler
-	if u.onStop != nil {
-		u.onStop()
-	}
-
-	// Paste text if we have any
-	if text != "" {
-		// Paste in goroutine to not block
-		go func() {
-			PasteText(text)
-		}()
-	}
-
-	// Hide window (already on main thread from toggleRecording)
-	window.Hide()
-
-	u.mu.Lock()
-	u.recording = false
-	u.mu.Unlock()
-}
-
-// SetTranscription replaces the current transcription text (thread-safe)
-// Used for streaming where each update contains the full accumulated text
-func (u *UI) SetTranscription(text string) {
-	// Dispatch to main thread for UI update
-	Dispatch(func() {
-		window := u.app.GetWindow()
-		if window != nil {
-			u.logger.Debug("Setting transcription text: %d chars", len(text))
-			window.SetText(text)
-		} else {
-			u.logger.Error("SetTranscription called but window is nil")
-		}
-	})
-}
-
-// AppendTranscription adds a transcription chunk (thread-safe)
-// Used for incremental transcription where each chunk is new text
-func (u *UI) AppendTranscription(text string) {
-	// Dispatch to main thread for UI update
-	Dispatch(func() {
-		window := u.app.GetWindow()
-		if window != nil {
-			window.AppendText(text)
-		}
-	})
-}
-
-// IsRecording returns current recording state
-func (u *UI) IsRecording() bool {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return u.recording
-}
-
-// SetProcessingState updates the processing state (thread-safe)
-func (u *UI) SetProcessingState(processing bool) {
-	// Dispatch to main thread for UI update
-	Dispatch(func() {
-		window := u.app.GetWindow()
-		if window != nil {
-			window.SetProcessing(processing)
-		}
-	})
+func percentile(sorted []float64, p float64) float64 {
+	idx := int(float64(len(sorted)-1) * p)
+	return sorted[idx]
 }

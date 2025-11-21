@@ -1,4 +1,4 @@
-package ui
+package platform
 
 /*
 #cgo CFLAGS: -x objective-c
@@ -34,8 +34,6 @@ import "C"
 
 import (
 	"sync"
-
-	"github.com/progrium/darwinkit/dispatch"
 )
 
 var (
@@ -56,9 +54,12 @@ func goHotkeyCallback(id C.int) {
 	}
 	hotkeyMu.Unlock()
 
+	// Call the callback directly (no need for main thread dispatch
+	// since we're not doing UI operations in Go anymore - just sending
+	// IPC commands to Swift subprocess which is thread-safe)
 	if cb != nil {
-		// CRITICAL: Dispatch to main thread for UI operations
-		dispatch.MainQueue().DispatchAsync(cb)
+		// Run in a goroutine to avoid blocking the Carbon Events thread
+		go cb()
 	}
 }
 

@@ -289,7 +289,31 @@ if [ "$ENABLE_RNNOISE" = true ]; then
 fi
 echo ""
 
+# Build Swift UI
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Building Swift UI..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [ -d "$PROJECT_ROOT/client/ui-macos" ]; then
+    cd "$PROJECT_ROOT/client/ui-macos"
+    if swift build -c release; then
+        echo "✅ Swift UI built successfully"
+        mkdir -p "$PROJECT_ROOT/bin"
+        cp .build/release/richardtate-ui "$PROJECT_ROOT/bin/"
+        echo "✅ Swift UI binary copied to bin/richardtate-ui"
+    else
+        echo "❌ Swift UI build failed"
+        exit 1
+    fi
+    cd "$PROJECT_ROOT"
+else
+    echo "⚠️  Swift UI directory not found (client/ui-macos)"
+    echo "   Skipping Swift UI build"
+fi
+
 # Build client
+echo ""
 echo "🔨 Building client..."
 cd "$PROJECT_ROOT/client"
 go build -o cmd/client/richardtate-client ./cmd/client
@@ -298,7 +322,21 @@ echo "✅ Client built: client/cmd/client/richardtate-client ($CLIENT_SIZE)"
 echo ""
 
 cd "$PROJECT_ROOT"
-echo "✅ Build complete!"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Build Complete!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Built with:"
+echo "  - Whisper.cpp: ✅ enabled"
+echo "  - RNNoise: $([ "$ENABLE_RNNOISE" = true ] && echo '✅ enabled' || echo '❌ disabled')"
+echo "  - Parakeet MLX: $PARAKEET_STATUS"
+echo "  - Swift UI: $([ -f "$PROJECT_ROOT/bin/richardtate-ui" ] && echo '✅ enabled' || echo '❌ not found')"
+echo ""
+echo "Binaries:"
+echo "  - Server: server/cmd/server/richardtate-server"
+echo "  - Client: client/cmd/client/richardtate-client"
+echo "  - Swift UI: bin/richardtate-ui"
 echo ""
 
 # Always create config directory and copy configs if they don't exist
