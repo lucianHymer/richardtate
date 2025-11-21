@@ -6,6 +6,9 @@ class PreviewWindow: NSWindow {
     private var isProcessing: Bool = false
 
     init() {
+        // Create text field BEFORE super.init
+        textField = NSTextField(wrappingLabelWithString: "")
+
         // Window configuration
         let frame = NSRect(x: 0, y: 0, width: 400, height: 200)
         super.init(
@@ -23,8 +26,7 @@ class PreviewWindow: NSWindow {
         self.ignoresMouseEvents = true  // Click-through
         self.center()
 
-        // Create text field (wrapping label)
-        textField = NSTextField(wrappingLabelWithString: "")
+        // Configure text field
         textField.frame = NSRect(x: 10, y: 10, width: 380, height: 180)
         textField.textColor = NSColor(red: 0.4, green: 0.95, blue: 0.7, alpha: 1.0)
         textField.font = NSFont.systemFont(ofSize: 14)

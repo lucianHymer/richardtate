@@ -9,6 +9,23 @@ class CalibrationWindow: NSWindow {
     private var currentStep: Int = 0
 
     init() {
+        // Create UI elements BEFORE super.init
+        messageLabel = NSTextField(labelWithString: "")
+
+        progressIndicator = NSProgressIndicator()
+        progressIndicator.style = .bar
+        progressIndicator.minValue = 0
+        progressIndicator.maxValue = 1
+        progressIndicator.isIndeterminate = false
+
+        statsLabel = NSTextField(wrappingLabelWithString: "")
+
+        backgroundBar = NSView(frame: NSRect(x: 100, y: 60, width: 0, height: 20))
+        backgroundBar.wantsLayer = true
+
+        speechBar = NSView(frame: NSRect(x: 100, y: 30, width: 0, height: 20))
+        speechBar.wantsLayer = true
+
         // Window configuration
         let frame = NSRect(x: 0, y: 0, width: 500, height: 400)
         super.init(
@@ -21,29 +38,17 @@ class CalibrationWindow: NSWindow {
         self.title = "VAD Calibration"
         self.center()
 
-        // Create UI elements
-        messageLabel = NSTextField(labelWithString: "")
+        // Configure UI elements
         messageLabel.frame = NSRect(x: 20, y: 320, width: 460, height: 60)
         messageLabel.font = NSFont.systemFont(ofSize: 16)
         messageLabel.alignment = .center
 
-        progressIndicator = NSProgressIndicator()
         progressIndicator.frame = NSRect(x: 100, y: 280, width: 300, height: 20)
-        progressIndicator.style = .bar
-        progressIndicator.minValue = 0
-        progressIndicator.maxValue = 1
-        progressIndicator.isIndeterminate = false
 
-        statsLabel = NSTextField(wrappingLabelWithString: "")
         statsLabel.frame = NSRect(x: 20, y: 100, width: 460, height: 160)
         statsLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
-        backgroundBar = NSView(frame: NSRect(x: 100, y: 60, width: 0, height: 20))
-        backgroundBar.wantsLayer = true
         backgroundBar.layer?.backgroundColor = NSColor.systemBlue.cgColor
-
-        speechBar = NSView(frame: NSRect(x: 100, y: 30, width: 0, height: 20))
-        speechBar.wantsLayer = true
         speechBar.layer?.backgroundColor = NSColor.systemGreen.cgColor
 
         contentView?.addSubview(messageLabel)
