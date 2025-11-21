@@ -21,6 +21,10 @@ type UI struct {
 	logger     *logger.ContextLogger
 	baseLogger *logger.Logger
 
+	// State tracking for graceful finalization
+	userWantsToStop  bool // User pressed Ctrl+N to stop
+	serverProcessing bool // Server is_processing=true
+
 	// Callbacks
 	onStart func() error
 	onStop  func() error
@@ -197,22 +201,63 @@ func (u *UI) startRecording() {
 }
 
 func (u *UI) stopRecording() {
+	u.logger.Info("stopRecording called")
+
+	// Set user wants to stop flag
+	u.mu.Lock()
+	u.userWantsToStop = true
+	currentlyProcessing := u.serverProcessing
+	u.mu.Unlock()
+
+	// Call handler to stop audio and send control.stop
+	if u.onStop != nil {
+		u.onStop()
+	}
+
+	u.logger.Info("Stop recording: userWantsToStop=true, serverProcessing=%v", currentlyProcessing)
+
+	// Check if we can finalize immediately
+	if !currentlyProcessing {
+		u.logger.Info("Server not processing, finalizing immediately")
+		u.finalize()
+	} else {
+		u.logger.Info("Server still processing, waiting for is_processing=false")
+
+		// Start a timeout goroutine to force finalization after 5 seconds
+		go func() {
+			time.Sleep(5 * time.Second)
+			u.mu.Lock()
+			stillWaiting := u.userWantsToStop && u.serverProcessing
+			u.mu.Unlock()
+
+			if stillWaiting {
+				u.logger.Warn("Timeout waiting for server, forcing finalization")
+				// Dispatch to main thread for finalization
+				Dispatch(func() {
+					u.finalize()
+				})
+			}
+		}()
+	}
+}
+
+// finalize completes the recording session by pasting text and cleaning up
+func (u *UI) finalize() {
+	u.logger.Info("finalize called")
+
 	window := u.app.GetWindow()
 	if window == nil {
-		u.logger.Error("Window not initialized")
+		u.logger.Error("Window not initialized in finalize")
 		u.mu.Lock()
 		u.recording = false
+		u.userWantsToStop = false
 		u.mu.Unlock()
 		return
 	}
 
 	// Get accumulated text
 	text := window.GetText()
-
-	// Call handler
-	if u.onStop != nil {
-		u.onStop()
-	}
+	u.logger.Info("Finalizing with text: %d chars", len(text))
 
 	// Paste text if we have any
 	if text != "" {
@@ -222,12 +267,17 @@ func (u *UI) stopRecording() {
 		}()
 	}
 
-	// Hide window (already on main thread from toggleRecording)
+	// Hide window (already on main thread)
 	window.Hide()
 
+	// Reset state
 	u.mu.Lock()
 	u.recording = false
+	u.userWantsToStop = false
+	u.serverProcessing = false
 	u.mu.Unlock()
+
+	u.logger.Info("Finalization complete")
 }
 
 // SetTranscription replaces the current transcription text (thread-safe)
@@ -266,11 +316,25 @@ func (u *UI) IsRecording() bool {
 
 // SetProcessingState updates the processing state (thread-safe)
 func (u *UI) SetProcessingState(processing bool) {
+	u.logger.Info("SetProcessingState called: processing=%v", processing)
+
+	// Update state
+	u.mu.Lock()
+	u.serverProcessing = processing
+	wantsToStop := u.userWantsToStop
+	u.mu.Unlock()
+
 	// Dispatch to main thread for UI update
 	Dispatch(func() {
 		window := u.app.GetWindow()
 		if window != nil {
 			window.SetProcessing(processing)
+		}
+
+		// Check if we should finalize (both conditions met)
+		if wantsToStop && !processing {
+			u.logger.Info("Both conditions met (userWantsToStop && !processing), finalizing")
+			u.finalize()
 		}
 	})
 }

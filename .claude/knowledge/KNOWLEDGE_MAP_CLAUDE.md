@@ -17,7 +17,7 @@ System design, component relationships, and structural decisions.
 @architecture/config-hot-reload.md
 @architecture/logging-system.md
 @architecture/debug-log-system.md
-@architecture/hammerspoon-integration.md
+@architecture/native-macos-ui.md
 
 ## Dependencies
 
