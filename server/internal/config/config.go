@@ -32,7 +32,7 @@ type Config struct {
 		// Parakeet-specific settings
 		Parakeet struct {
 			ModelID    string `yaml:"model_id"`    // Model identifier (e.g., "mlx-community/parakeet-tdt-0.6b-v3")
-			ScriptPath string `yaml:"script_path"` // Path to parakeet_worker_streaming.py script
+			ScriptPath string `yaml:"script_path"` // Path to parakeet_worker.py script
 			PythonPath string `yaml:"python_path"` // Path to Python interpreter (default: "python3")
 		} `yaml:"parakeet"`
 
