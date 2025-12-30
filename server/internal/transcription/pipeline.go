@@ -19,9 +19,11 @@ type TranscriptionPipeline struct {
 	rnnoise      *RNNoiseProcessor
 	chunker      *SmartChunker
 	resultChan   chan TranscriptionResult
-	stateTracker *ProcessingStateTracker // Tracks processing state for loading indicator
+	stoppedChan  chan struct{}             // Closed when Stop() completes (signals sender to exit)
+	stateTracker *ProcessingStateTracker   // Tracks processing state for loading indicator
 	mu           sync.RWMutex
 	active       bool
+	stopped      bool // True after Stop() completes
 	debugWAV     bool // Enable WAV file debugging
 	log          *logger.ContextLogger
 }
@@ -89,13 +91,15 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 	}
 
 	pipeline := &TranscriptionPipeline{
-		asr:        asr,
-		engine:     engine,
-		rnnoise:    rnnoise,
-		resultChan: resultChan,
-		active:     false,
-		debugWAV:   config.EnableDebugWAV,
-		log:        log,
+		asr:         asr,
+		engine:      engine,
+		rnnoise:     rnnoise,
+		resultChan:  resultChan,
+		stoppedChan: make(chan struct{}),
+		active:      false,
+		stopped:     false,
+		debugWAV:    config.EnableDebugWAV,
+		log:         log,
 	}
 
 	// Create smart chunker with VAD - used by both Whisper and Parakeet
@@ -274,7 +278,20 @@ func (p *TranscriptionPipeline) Stop() error {
 		p.chunker.Flush() // Flush again after adding RNNoise remainder
 	}
 
+	// Signal that stop is complete (sender can exit after draining results)
+	p.mu.Lock()
+	if !p.stopped {
+		p.stopped = true
+		close(p.stoppedChan)
+	}
+	p.mu.Unlock()
+
 	return nil
+}
+
+// Stopped returns a channel that's closed when Stop() completes
+func (p *TranscriptionPipeline) Stopped() <-chan struct{} {
+	return p.stoppedChan
 }
 
 // Results returns the channel for receiving transcription results

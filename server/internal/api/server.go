@@ -286,12 +286,10 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 				s.logger.Info("Transcription pipeline stopped for peer %s", peerID)
 			}
 
-			// Close the pipeline to signal the result sender to exit
-			if err := pipeline.Close(); err != nil {
-				s.logger.Error("Failed to close pipeline: %v", err)
-			}
-
 			// Wait for result sender to finish (with timeout)
+			// Note: We don't call Close() here - the sender will exit when it sees
+			// the stopped signal and drains remaining results. Close() is called
+			// when the connection is cleaned up.
 			s.senderDoneMu.Lock()
 			doneChan := s.senderDone[peerID]
 			delete(s.senderDone, peerID)
@@ -331,79 +329,109 @@ func (s *Server) sendTranscriptionResults(peerID string, peer *webrtc.PeerConnec
 		s.logger.Info("Stopped transcription result sender for peer %s", peerID)
 	}()
 
-	for result := range pipeline.Results() {
-		// Handle state change messages
-		if result.IsStateChange {
-			s.logger.Info("Processing state change: is_processing=%v", result.IsProcessing)
-
-			// Create processing state message
-			stateData := protocol.ProcessingStateData{
-				IsProcessing: result.IsProcessing,
+	// Process results until pipeline is stopped
+	stopped := false
+	for !stopped {
+		select {
+		case result, ok := <-pipeline.Results():
+			if !ok {
+				// Channel closed (pipeline.Close() was called)
+				return
 			}
+			s.processResult(peerID, peer, result)
+		case <-pipeline.Stopped():
+			// Pipeline stopped - drain remaining results
+			stopped = true
+		}
+	}
 
-			stateJSON, err := json.Marshal(stateData)
-			if err != nil {
-				s.logger.Error("Failed to marshal state data: %v", err)
-				continue
+	// Drain any remaining results in the channel
+	s.logger.Debug("Draining remaining results for peer %s", peerID)
+drainLoop:
+	for {
+		select {
+		case result, ok := <-pipeline.Results():
+			if !ok {
+				break drainLoop
 			}
+			s.processResult(peerID, peer, result)
+		default:
+			// No more results waiting
+			break drainLoop
+		}
+	}
+	s.logger.Debug("Finished draining results for peer %s", peerID)
+}
 
-			msg := &protocol.Message{
-				Type:      protocol.MessageTypeProcessingState,
-				Timestamp: result.Timestamp,
-				Data:      stateJSON,
-			}
+// processResult handles a single transcription result
+func (s *Server) processResult(peerID string, peer *webrtc.PeerConnection, result transcription.TranscriptionResult) {
+	// Handle state change messages
+	if result.IsStateChange {
+		s.logger.Info("Processing state change: is_processing=%v", result.IsProcessing)
 
-			// Send to client
-			if err := peer.SendMessage(msg); err != nil {
-				s.logger.Error("Failed to send state to peer %s: %v", peerID, err)
-				break
-			}
-
-			s.logger.Debug("Sent processing state to peer %s: is_processing=%v", peerID, result.IsProcessing)
-			continue
+		// Create processing state message
+		stateData := protocol.ProcessingStateData{
+			IsProcessing: result.IsProcessing,
 		}
 
-		// Check if there was an error
-		if result.Error != nil {
-			s.logger.Error("Transcription error: %v", result.Error)
-			continue
-		}
-
-		// Skip empty transcriptions
-		if result.Text == "" {
-			continue
-		}
-
-		s.logger.Info("Transcription result: %q", result.Text)
-
-		// Create transcription message
-		transcriptData := protocol.TranscriptData{
-			Text:    result.Text,
-			IsFinal: true,
-		}
-
-		transcriptJSON, err := json.Marshal(transcriptData)
+		stateJSON, err := json.Marshal(stateData)
 		if err != nil {
-			s.logger.Error("Failed to marshal transcript data: %v", err)
-			continue
+			s.logger.Error("Failed to marshal state data: %v", err)
+			return
 		}
 
 		msg := &protocol.Message{
-			Type:      protocol.MessageTypeTranscriptFinal,
+			Type:      protocol.MessageTypeProcessingState,
 			Timestamp: result.Timestamp,
-			Data:      transcriptJSON,
+			Data:      stateJSON,
 		}
 
 		// Send to client
 		if err := peer.SendMessage(msg); err != nil {
-			s.logger.Error("Failed to send transcription to peer %s: %v", peerID, err)
-			break
+			s.logger.Error("Failed to send state to peer %s: %v", peerID, err)
+		} else {
+			s.logger.Debug("Sent processing state to peer %s: is_processing=%v", peerID, result.IsProcessing)
 		}
-
-		s.logger.Debug("Sent transcription to peer %s: %q", peerID, result.Text)
+		return
 	}
 
-	s.logger.Info("Transcription result sender stopped for peer %s", peerID)
+	// Check if there was an error
+	if result.Error != nil {
+		s.logger.Error("Transcription error: %v", result.Error)
+		return
+	}
+
+	// Skip empty transcriptions
+	if result.Text == "" {
+		return
+	}
+
+	s.logger.Info("Transcription result: %q", result.Text)
+
+	// Create transcription message
+	transcriptData := protocol.TranscriptData{
+		Text:    result.Text,
+		IsFinal: true,
+	}
+
+	transcriptJSON, err := json.Marshal(transcriptData)
+	if err != nil {
+		s.logger.Error("Failed to marshal transcript data: %v", err)
+		return
+	}
+
+	msg := &protocol.Message{
+		Type:      protocol.MessageTypeTranscriptFinal,
+		Timestamp: result.Timestamp,
+		Data:      transcriptJSON,
+	}
+
+	// Send to client
+	if err := peer.SendMessage(msg); err != nil {
+		s.logger.Error("Failed to send transcription to peer %s: %v", peerID, err)
+	} else {
+		s.logger.Debug("Sent transcription to peer %s: %q", peerID, result.Text)
+	}
 }
 
 // handleAnalyzeAudio analyzes audio samples and returns energy statistics
