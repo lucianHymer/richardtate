@@ -31,10 +31,12 @@ var (
 
 // Session state for tracking complete transcriptions
 var (
-	sessionMu        sync.Mutex
-	sessionChunks    []string
-	sessionStart     time.Time
-	sessionRecording bool
+	sessionMu         sync.Mutex
+	sessionChunks     []string
+	sessionStart      time.Time
+	sessionRecording  bool
+	sessionComplete   chan struct{} // Signaled when transcript.complete received
+	sessionCompleteMu sync.Mutex
 )
 
 // getDefaultConfigPath returns the XDG Base Directory compliant config path
@@ -181,6 +183,11 @@ func main() {
 			sessionRecording = true
 			sessionMu.Unlock()
 
+			// Create completion channel for this session
+			sessionCompleteMu.Lock()
+			sessionComplete = make(chan struct{})
+			sessionCompleteMu.Unlock()
+
 			// Send control start message to server
 			if err := webrtcClient.SendControlStart(); err != nil {
 				log.Error("Failed to send control start: %v", err)
@@ -207,7 +214,30 @@ func main() {
 			}
 			log.Info("Audio capture stopped")
 
-			// Log complete session to debug log
+			// Get the completion channel for waiting
+			sessionCompleteMu.Lock()
+			completeChan := sessionComplete
+			sessionCompleteMu.Unlock()
+
+			// Send control stop message to server
+			if err := webrtcClient.SendControlStop(); err != nil {
+				log.Error("Failed to send control stop: %v", err)
+				return err
+			}
+			log.Info("Sent control stop to server")
+
+			// Wait for transcript.complete (with timeout)
+			// Keep sessionRecording=true so we accumulate any final chunks
+			if completeChan != nil {
+				select {
+				case <-completeChan:
+					log.Info("Received transcript.complete from server")
+				case <-time.After(5 * time.Second):
+					log.Warn("Timeout waiting for transcript.complete")
+				}
+			}
+
+			// Now mark session as done and get the final accumulated text
 			sessionMu.Lock()
 			sessionRecording = false
 			fullText := strings.Join(sessionChunks, " ")
@@ -229,12 +259,6 @@ func main() {
 				}()
 			}
 
-			// Send control stop message to server
-			if err := webrtcClient.SendControlStop(); err != nil {
-				log.Error("Failed to send control stop: %v", err)
-				return err
-			}
-			log.Info("Sent control stop to server")
 			return nil
 		},
 	)
@@ -317,6 +341,17 @@ func handleDataChannelMessage(msg *protocol.Message) {
 			}
 		}
 		sessionMu.Unlock()
+
+	case protocol.MessageTypeTranscriptComplete:
+		messageLog.Info("Received transcript.complete from server")
+
+		// Signal completion to the stop handler
+		sessionCompleteMu.Lock()
+		if sessionComplete != nil {
+			close(sessionComplete)
+			sessionComplete = nil // Prevent double-close
+		}
+		sessionCompleteMu.Unlock()
 
 	default:
 		messageLog.Info("Received unknown message type: %s", string(msg.Type))

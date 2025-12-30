@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +32,10 @@ type Server struct {
 	server           *http.Server
 	webrtcManager    *webrtc.Manager
 	rnnoiseModelPath string // For calibration RNNoise processing
+
+	// Track result sender goroutines for clean shutdown signaling
+	senderDoneMu sync.Mutex
+	senderDone   map[string]chan struct{} // peerID -> done channel
 }
 
 // New creates a new API server
@@ -41,6 +46,7 @@ func New(bindAddr string, log *logger.Logger, webrtcMgr *webrtc.Manager, rnnoise
 		logger:           log.With("api"),
 		webrtcManager:    webrtcMgr,
 		rnnoiseModelPath: rnnoiseModelPath,
+		senderDone:       make(map[string]chan struct{}),
 	}
 }
 
@@ -258,8 +264,14 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 		} else {
 			s.logger.Info("Transcription pipeline started for peer %s", peerID)
 
+			// Create done channel for this peer's result sender
+			doneChan := make(chan struct{})
+			s.senderDoneMu.Lock()
+			s.senderDone[peerID] = doneChan
+			s.senderDoneMu.Unlock()
+
 			// Start result sender goroutine
-			go s.sendTranscriptionResults(peerID, peer, pipeline)
+			go s.sendTranscriptionResults(peerID, peer, pipeline, doneChan)
 		}
 
 	case protocol.MessageTypeControlStop:
@@ -273,6 +285,37 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 			} else {
 				s.logger.Info("Transcription pipeline stopped for peer %s", peerID)
 			}
+
+			// Close the pipeline to signal the result sender to exit
+			if err := pipeline.Close(); err != nil {
+				s.logger.Error("Failed to close pipeline: %v", err)
+			}
+
+			// Wait for result sender to finish (with timeout)
+			s.senderDoneMu.Lock()
+			doneChan := s.senderDone[peerID]
+			delete(s.senderDone, peerID)
+			s.senderDoneMu.Unlock()
+
+			if doneChan != nil {
+				select {
+				case <-doneChan:
+					s.logger.Debug("Result sender finished for peer %s", peerID)
+				case <-time.After(5 * time.Second):
+					s.logger.Warn("Timeout waiting for result sender for peer %s", peerID)
+				}
+			}
+
+			// Send completion signal to client
+			completeMsg := &protocol.Message{
+				Type:      protocol.MessageTypeTranscriptComplete,
+				Timestamp: time.Now().UnixMilli(),
+			}
+			if err := peer.SendMessage(completeMsg); err != nil {
+				s.logger.Error("Failed to send completion to peer %s: %v", peerID, err)
+			} else {
+				s.logger.Info("Sent transcript.complete to peer %s", peerID)
+			}
 		}
 
 	default:
@@ -281,9 +324,12 @@ func (s *Server) handleDataChannelMessage(peerID string, peer *webrtc.PeerConnec
 }
 
 // sendTranscriptionResults reads from the pipeline results and sends them to the client
-func (s *Server) sendTranscriptionResults(peerID string, peer *webrtc.PeerConnection, pipeline *transcription.TranscriptionPipeline) {
+func (s *Server) sendTranscriptionResults(peerID string, peer *webrtc.PeerConnection, pipeline *transcription.TranscriptionPipeline, done chan struct{}) {
 	s.logger.Info("Starting transcription result sender for peer %s", peerID)
-	defer s.logger.Info("Stopped transcription result sender for peer %s", peerID)
+	defer func() {
+		close(done) // Signal that we're done sending results
+		s.logger.Info("Stopped transcription result sender for peer %s", peerID)
+	}()
 
 	for result := range pipeline.Results() {
 		// Handle state change messages
