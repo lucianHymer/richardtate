@@ -300,26 +300,21 @@ func handleDataChannelMessage(msg *protocol.Message) {
 		}
 		fmt.Printf("%s\n", transcript.Text)
 
-		// Update UI - final transcript REPLACES the text (it's the complete text for this chunk)
-		if globalUI != nil {
-			messageLog.Debug("Calling SetTranscription with %d chars", len(transcript.Text))
-			globalUI.SetTranscription(transcript.Text)
-		} else {
-			messageLog.Error("globalUI is nil!")
-		}
-
 		// Log chunk to debug log
 		if err := globalDebugLog.LogChunk(transcript.Text); err != nil {
 			messageLog.Error("Failed to log chunk to debug log: %v", err)
 		}
 
-		// Track session chunks - for final transcripts, we need to track only the NEW text
-		// Since Parakeet sends accumulated text, we track the full final text as one chunk
+		// Track session chunks - APPEND each chunk (chunked mode sends separate sentences)
 		sessionMu.Lock()
 		if sessionRecording {
-			// Clear previous chunks and set to just this final text
-			// (The final contains all accumulated text from the stream)
-			sessionChunks = []string{transcript.Text}
+			sessionChunks = append(sessionChunks, transcript.Text)
+			// Update UI with accumulated text
+			fullText := strings.Join(sessionChunks, " ")
+			if globalUI != nil {
+				messageLog.Debug("Calling SetTranscription with %d chars (accumulated)", len(fullText))
+				globalUI.SetTranscription(fullText)
+			}
 		}
 		sessionMu.Unlock()
 
