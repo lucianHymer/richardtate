@@ -1,7 +1,7 @@
 # Parakeet MLX Integration
 
-**Status**: Phase 2 Complete ✅ (Shared Worker Pattern Implemented)
-**Last Updated**: 2025-11-17
+**Status**: Phase 3 Complete ✅ (Full Streaming Parakeet with VAD Bypass)
+**Last Updated**: 2025-12-30
 
 ## Overview
 Parakeet MLX integration as alternative ASR engine alongside Whisper. Provides faster transcription on Apple Silicon through MLX acceleration, with automatic platform detection and fallback mock for testing.
@@ -533,6 +533,100 @@ Successfully integrated Parakeet streaming support for real-time transcription w
 - Uses `parakeet_worker_streaming.py` with `transcribe_stream()` API
 - Maintains streaming contexts per client ID
 - Handles incremental text tracking (API returns accumulated text, worker sends only new portions)
+
+## Architecture Evolution History
+
+### Phase 1: Batch/Chunked Parakeet (Commit d2d2053, Nov 17, 2025)
+**Architecture**: Each request transcribes complete audio samples through Parakeet, returns immediate result
+
+**Key Characteristics**:
+- **parakeet_worker.py**: Simple batch transcriber - write entire audio to temp WAV file, call model.transcribe(path) once, return complete result
+- **parakeet_transcriber.go**: Per-pipeline subprocess manager (327 lines) - launched subprocess for each pipeline
+- **Pipeline Integration**: Both Whisper and Parakeet went through chunker - Parakeet received chunked audio (1-30s chunks from VAD silence detection)
+- **Memory**: Terrible - 10 clients = 2GB (200MB per subprocess)
+
+### Phase 2: SharedParakeetWorker Pattern (Commit 57e2d99, Nov 17, 2025)
+**Architecture**: Single persistent subprocess shared across all pipelines (mirrors SharedWhisperModel)
+
+**Key Characteristics**:
+- **parakeet_shared.go**: Persistent subprocess manager (319 lines) - one subprocess at server startup, model loaded once
+- **parakeet_transcriber.go**: Lightweight adapter (40 lines) - just forwards Transcribe() calls to shared worker
+- **Pipeline Integration**: Still uses chunker for Parakeet - no pipeline changes
+- **Memory**: 90% reduction - 10 clients = 200MB total
+
+### Phase 3: Full Streaming Parakeet (Commit 4930253, Nov 19, 2025)
+**Architecture**: Streaming protocol with per-client contexts, pipeline bypasses VAD/chunker for Parakeet
+
+**Key Characteristics**:
+- **parakeet_worker_streaming.py**: Streaming-aware worker (215 lines) - maintains multiple streaming contexts per client, uses transcribe_stream context manager
+- **parakeet_shared.go**: Streaming worker manager (350+ lines) - manages ParakeetClient objects with buffers, ProcessAudio() buffers samples until 1 second
+- **Pipeline.ProcessChunk() changes**:
+  - **Whisper path**: Raw audio → RNNoise → Chunker (with VAD) → Transcribe on silence
+  - **Parakeet path**: Raw audio → RNNoise → Direct to ASR (VAD gating only, no chunking)
+- **State tracking**: Added `parakeetWasSpeaking`, `parakeetSilenceBuf`, `parakeetSilenceSent` state variables
+- **Buffering**: 1.5 seconds silence accumulation (24000 samples) to flush Parakeet's internal buffer
+
+### Request/Response Protocol Comparison
+
+**Batch (Phase 1-2)**:
+```json
+Request: {"audio": "base64-float32", "sample_rate": 16000}
+Response: {"text": "transcription", "error": "..."}
+```
+
+**Streaming (Phase 3)**:
+```json
+Request: {"command": "start_stream", "client_id": "uuid", "context_size": [256,256], "depth": 2}
+Response: {"status": "started", "client_id": "uuid"}
+
+Request: {"command": "add_audio", "client_id": "uuid", "audio": "base64", "sample_rate": 16000}
+Response: {"text": "accumulating transcription", "is_final": false, "client_id": "uuid"}
+
+Request: {"command": "end_stream", "client_id": "uuid"}
+Response: {"status": "ended", "client_id": "uuid"}
+```
+
+### Pipeline Control Flow Differences
+
+**Whisper** (unchanged across all phases):
+```
+RNNoise → Chunker.ProcessSamples()
+  → [accumulate until 1s silence]
+  → Chunker calls transcribeChunk callback
+  → Transcribe float32 chunk
+  → Send result
+```
+
+**Parakeet Batch** (Phases 1-2):
+```
+RNNoise → Chunker.ProcessSamples()
+  → [accumulate until 1s silence]
+  → Chunker calls transcribeChunk callback
+  → Transcribe float32 chunk
+  → Send result
+(Same as Whisper - no difference in pipeline control)
+```
+
+**Parakeet Streaming** (Phase 3):
+```
+RNNoise → Samples → VAD.ProcessFrame() for gating (not chunking!)
+  → If speech: send immediately with accumulated silence
+  → If silence: accumulate until 1.5s or next speech
+  → ProcessAudio() buffers to 1 second, sends to worker
+  → Worker accumulates and returns text when available
+  → No chunker involvement
+```
+
+### Reverting to Chunked Mode
+
+If streaming causes issues, reverting would require:
+1. Restore `parakeet_worker.py` (batch version) from commit d2d2053
+2. Revert `parakeet_shared.go` to batch version (no streaming manager)
+3. In `pipeline.go`: Remove engine-specific routing, restore Parakeet to use chunker, remove state variables
+4. Restore `parakeet_transcriber.go` to per-pipeline manager (300+ lines)
+5. Update factory and main.go to not use shared worker
+
+**Trade-off**: Would lose streaming benefits (natural speech flow, no VAD calibration pauses) but simplify code.
 
 ## Related Documentation
 - [ASR Interface Abstraction](asr-interface-abstraction.md) - Interface design and Phase 1

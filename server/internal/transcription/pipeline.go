@@ -12,23 +12,21 @@ import (
 
 // TranscriptionPipeline handles the complete audio-to-text pipeline
 // Flow: Raw Audio → RNNoise → VAD/Chunker → ASR (Whisper/Parakeet) → Results
+// Both Whisper and Parakeet now use the same VAD-based chunking approach
 type TranscriptionPipeline struct {
 	asr          ASRTranscriber // ASR engine (Whisper or Parakeet)
 	engine       string         // Engine type: "whisper" or "parakeet"
 	rnnoise      *RNNoiseProcessor
 	chunker      *SmartChunker
-	vad          *VoiceActivityDetector // VAD for Parakeet gating (Whisper uses chunker's VAD)
 	resultChan   chan TranscriptionResult
-	stateTracker *ProcessingStateTracker // Tracks processing state for loading indicator
+	stoppedChan  chan struct{}             // Closed when Stop() completes (signals sender to exit)
+	stateTracker *ProcessingStateTracker   // Tracks processing state for loading indicator
+	inflightWg   sync.WaitGroup            // Tracks in-flight transcriptions
 	mu           sync.RWMutex
 	active       bool
+	stopped      bool // True after Stop() completes
 	debugWAV     bool // Enable WAV file debugging
 	log          *logger.ContextLogger
-
-	// Parakeet silence accumulation state
-	parakeetWasSpeaking bool      // Was the previous chunk speech?
-	parakeetSilenceBuf  []float32 // Accumulated silence samples
-	parakeetSilenceSent bool      // Have we sent the silence flush after speech?
 }
 
 // TranscriptionResult holds transcription output or state changes
@@ -94,26 +92,18 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 	}
 
 	pipeline := &TranscriptionPipeline{
-		asr:        asr,
-		engine:     engine,
-		rnnoise:    rnnoise,
-		resultChan: resultChan,
-		active:     false,
-		debugWAV:   config.EnableDebugWAV,
-		log:        log,
+		asr:         asr,
+		engine:      engine,
+		rnnoise:     rnnoise,
+		resultChan:  resultChan,
+		stoppedChan: make(chan struct{}),
+		active:      false,
+		stopped:     false,
+		debugWAV:    config.EnableDebugWAV,
+		log:         log,
 	}
 
-	// Create VAD for Parakeet gating (Whisper uses chunker's internal VAD)
-	if engine == "parakeet" {
-		pipeline.vad = NewVAD(VADConfig{
-			EnergyThreshold:    config.VADEnergyThreshold,
-			SilenceThresholdMs: int(config.SilenceThreshold.Milliseconds()),
-			SampleRate:         16000,
-		})
-		log.Info("VAD initialized for Parakeet gating with threshold %.1f", config.VADEnergyThreshold)
-	}
-
-	// Create smart chunker with VAD (used by Whisper, also available for stats)
+	// Create smart chunker with VAD - used by both Whisper and Parakeet
 	pipeline.chunker = NewSmartChunker(SmartChunkerConfig{
 		SampleRate:             16000,
 		SilenceThreshold:       config.SilenceThreshold,
@@ -149,8 +139,8 @@ func NewTranscriptionPipeline(config PipelineConfig) (*TranscriptionPipeline, er
 }
 
 // ProcessChunk processes an incoming audio chunk through the pipeline
-// Flow for Whisper: Raw PCM → RNNoise → Chunker (with VAD) → [triggers transcription on silence]
-// Flow for Parakeet: Raw PCM → RNNoise → Direct to ASR (Parakeet handles buffering internally)
+// Flow: Raw PCM → RNNoise → Chunker (with VAD) → [triggers transcription on silence]
+// Both Whisper and Parakeet now use the same VAD-based chunking approach
 func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) error {
 	p.mu.RLock()
 	if !p.active {
@@ -173,113 +163,15 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 		samples[i] = int16(denoisedBytes[i*2]) | int16(denoisedBytes[i*2+1])<<8
 	}
 
-	// Step 3: Route based on engine type
-	if p.engine == "parakeet" {
-		// For Parakeet streaming: use VAD to manage silence accumulation
-		// - Speech chunks: send immediately (with any accumulated silence)
-		// - First silence after speech: send it (pushes Parakeet buffer)
-		// - Continuing silence: accumulate, don't send (avoids refreshes)
+	// Step 3: Process through chunker (VAD-based chunking for both engines)
+	// The chunker will call transcribeChunk() when a chunk is ready
+	p.chunker.ProcessSamples(samples)
 
-		// Process samples through VAD to detect speech
-		frameSize := 160 // 10ms at 16kHz
-		hasSpeech := false
-		for offset := 0; offset+frameSize <= len(samples); offset += frameSize {
-			frame := samples[offset : offset+frameSize]
-			if p.vad.ProcessFrame(frame) {
-				hasSpeech = true
-			}
-		}
-
-		// Notify state tracker of VAD state
-		if hasSpeech {
-			p.stateTracker.NotifySpeechDetected()
-		} else {
-			p.stateTracker.NotifySilence()
-		}
-
-		// Convert int16 samples to float32 for ASR
-		floatSamples := make([]float32, len(samples))
-		for i, sample := range samples {
-			floatSamples[i] = float32(sample) / 32768.0
-		}
-
-		var samplesToSend []float32
-
-		// Parakeet internal buffer needs 1.5-2 seconds of silence to flush final words
-		// Using 1.5 seconds = 24000 samples at 16kHz as a balance
-		const parakeetBufferSamples = 24000 // 1.5 seconds
-
-		if hasSpeech {
-			// Speech chunk: prepend any accumulated silence, then send
-			if len(p.parakeetSilenceBuf) > 0 {
-				samplesToSend = append(p.parakeetSilenceBuf, floatSamples...)
-				p.parakeetSilenceBuf = nil
-			} else {
-				samplesToSend = floatSamples
-			}
-			p.parakeetWasSpeaking = true
-			p.parakeetSilenceSent = false
-		} else {
-			// Silence chunk
-			if p.parakeetSilenceSent {
-				// Already sent silence flush, just accumulate
-				p.parakeetSilenceBuf = append(p.parakeetSilenceBuf, floatSamples...)
-				return nil
-			}
-
-			// Accumulate silence
-			p.parakeetSilenceBuf = append(p.parakeetSilenceBuf, floatSamples...)
-
-			// Check if we've accumulated 1.5 seconds of silence to flush Parakeet's buffer
-			if len(p.parakeetSilenceBuf) >= parakeetBufferSamples {
-				// Send accumulated silence to push Parakeet's buffer through
-				samplesToSend = p.parakeetSilenceBuf
-				p.parakeetSilenceBuf = nil
-				p.parakeetWasSpeaking = false
-				p.parakeetSilenceSent = true
-			} else {
-				// Not enough silence yet, keep accumulating
-				return nil
-			}
-		}
-
-		// Transcribe (Parakeet returns text when it has enough audio)
-		text, err := p.asr.Transcribe(samplesToSend)
-
-		// If we got text back, send it as a result
-		if text != "" {
-			result := TranscriptionResult{
-				Text:      text,
-				Timestamp: timestamp,
-				Error:     err,
-			}
-
-			select {
-			case p.resultChan <- result:
-				p.log.InfoWithFields("Parakeet streaming result", map[string]interface{}{
-					"text": text,
-				})
-				// Notify state tracker of transcription activity
-				p.stateTracker.NotifyTranscription()
-			default:
-				p.log.Warn("Result dropped (channel full)")
-			}
-		}
-
-		if err != nil {
-			p.log.Error("Parakeet transcription error: %v", err)
-		}
+	// Notify state tracker of VAD state from chunker
+	if p.chunker.IsSpeaking() {
+		p.stateTracker.NotifySpeechDetected()
 	} else {
-		// For Whisper: use traditional VAD/chunker approach
-		// The chunker will call transcribeChunk() when a chunk is ready
-		p.chunker.ProcessSamples(samples)
-
-		// Notify state tracker of VAD state from chunker
-		if p.chunker.IsSpeaking() {
-			p.stateTracker.NotifySpeechDetected()
-		} else {
-			p.stateTracker.NotifySilence()
-		}
+		p.stateTracker.NotifySilence()
 	}
 
 	return nil
@@ -287,6 +179,10 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 
 // transcribeChunk is called by the chunker when a chunk is ready for transcription
 func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
+	// Track this transcription as in-flight
+	p.inflightWg.Add(1)
+	defer p.inflightWg.Done()
+
 	duration := float64(len(samples)) / 16000.0
 
 	// Save debug WAV if enabled
@@ -364,14 +260,6 @@ func (p *TranscriptionPipeline) Start() error {
 	p.chunker.Reset()
 	p.rnnoise.Reset()
 
-	// Reset VAD and silence buffer for Parakeet
-	if p.vad != nil {
-		p.vad.Reset()
-		p.parakeetWasSpeaking = false
-		p.parakeetSilenceBuf = nil
-		p.parakeetSilenceSent = false
-	}
-
 	return nil
 }
 
@@ -383,43 +271,35 @@ func (p *TranscriptionPipeline) Stop() error {
 		return fmt.Errorf("pipeline not active")
 	}
 	p.active = false
-	engine := p.engine
 	p.mu.Unlock()
 
-	// For Parakeet streaming: send final silence to flush any remaining words
-	if engine == "parakeet" {
-		// Send 2 seconds of silence to ensure everything is flushed
-		const flushSilenceSamples = 32000 // 2 seconds at 16kHz
-		silenceSamples := make([]float32, flushSilenceSamples)
+	// Flush the chunker (same for both engines)
+	p.chunker.Flush()
 
-		// Send the flush silence
-		text, err := p.asr.Transcribe(silenceSamples)
-		if text != "" {
-			result := TranscriptionResult{
-				Text:      text,
-				Timestamp: currentTimeMillis(),
-				Error:     err,
-			}
-			select {
-			case p.resultChan <- result:
-				p.log.Info("Final Parakeet flush result: %s", text)
-			default:
-				p.log.Warn("Final result dropped (channel full)")
-			}
-		}
-	} else {
-		// For Whisper: use traditional chunker flush
-		p.chunker.Flush()
-
-		// Flush any remaining audio in RNNoise buffer
-		remainingSamples := p.rnnoise.Flush()
-		if len(remainingSamples) > 0 {
-			p.chunker.ProcessSamples(remainingSamples)
-			p.chunker.Flush() // Flush again after adding RNNoise remainder
-		}
+	// Flush any remaining audio in RNNoise buffer
+	remainingSamples := p.rnnoise.Flush()
+	if len(remainingSamples) > 0 {
+		p.chunker.ProcessSamples(remainingSamples)
+		p.chunker.Flush() // Flush again after adding RNNoise remainder
 	}
 
+	// Wait for any in-flight transcriptions to complete
+	p.inflightWg.Wait()
+
+	// Signal that stop is complete (sender can exit after draining results)
+	p.mu.Lock()
+	if !p.stopped {
+		p.stopped = true
+		close(p.stoppedChan)
+	}
+	p.mu.Unlock()
+
 	return nil
+}
+
+// Stopped returns a channel that's closed when Stop() completes
+func (p *TranscriptionPipeline) Stopped() <-chan struct{} {
+	return p.stoppedChan
 }
 
 // Results returns the channel for receiving transcription results

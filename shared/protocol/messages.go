@@ -16,8 +16,9 @@ const (
 	MessageTypeAudioChunk MessageType = "audio.chunk"
 
 	// Transcription results
-	MessageTypeTranscriptPartial MessageType = "transcript.partial"
-	MessageTypeTranscriptFinal   MessageType = "transcript.final"
+	MessageTypeTranscriptPartial  MessageType = "transcript.partial"
+	MessageTypeTranscriptFinal    MessageType = "transcript.final"
+	MessageTypeTranscriptComplete MessageType = "transcript.complete"
 
 	// Processing state
 	MessageTypeProcessingState MessageType = "processing.state"

@@ -570,3 +570,119 @@ Using default (256, 256) for maximum quality and sending full result.text as pre
 **Files**: scripts/parakeet_worker_streaming.py, .claude/knowledge/architecture/parakeet-streaming-preview.md
 
 ---
+
+## Parakeet Final Word Cut-off Issue
+
+**Discovered**: 2025-12-30
+
+**Problem**: Parakeet streaming was cutting off approximately 50% of final words when recording stopped. Users would say "hello world" and only "hello" would be transcribed.
+
+**Root Cause**: Parakeet's streaming API requires more silence to flush final words through its internal buffer than Whisper. Originally, we only sent 1 second of silence after speech stopped, which wasn't enough for Parakeet to finalize its internal buffer.
+
+**Two Problems Identified**:
+1. **Insufficient silence accumulation**: 1 second (16000 samples) wasn't enough - increased to 1.5 seconds (24000 samples)
+2. **Missing Stop() flush for Parakeet**: The `pipeline.Stop()` function had a `chunker.Flush()` for Whisper but Parakeet doesn't use the chunker - it was missing explicit silence flush
+
+**Solution**:
+1. Increased `parakeetBufferSamples` from 16000 (1 second) to 24000 (1.5 seconds)
+2. Added explicit 2-second silence flush in `pipeline.Stop()` for Parakeet engine:
+```go
+if p.config.Engine == "parakeet" {
+    // Parakeet needs silence flush to finalize its internal buffer
+    silenceSamples := make([]float32, 32000) // 2 seconds of silence at 16kHz
+    p.config.SharedParakeetWorker.ProcessAudio(p.clientID, silenceSamples)
+}
+```
+
+**Why This is Critical**: The Stop() flush is essential because Parakeet doesn't have the same chunker.Flush() mechanism that Whisper uses. Without explicit silence on Stop(), any audio still in Parakeet's internal buffer is lost forever.
+
+**Files**: server/internal/transcription/pipeline.go
+
+---
+
+## Native UI Migration Timing Change - Control Stop Race Condition
+
+**Discovered**: 2025-12-30
+
+**Problem**: After migrating from Hammerspoon to native Go UI, transcriptions felt "shittier" - streaming chunks would arrive but final chunks were cut off or incomplete.
+
+**Root Cause**: Race condition between audio capture stop and control.stop message timing.
+
+**Hammerspoon Flow** (worked correctly):
+- Recording happens through HTTP /start endpoint
+- Recording stop happens through HTTP /stop endpoint
+- Both are synchronous and immediate
+- HTTP requests could queue behind audio processing
+
+**Native UI Flow** (problematic):
+```
+1. User presses Ctrl+N (stop)
+2. stopRecording() is called (ui.go line 199)
+3. onStop() handler is called (line 214)
+4. Audio capture is STOPPED FIRST (line 195)
+5. Debug log is written (lines 201-215)
+6. THEN control.stop is sent (line 218)
+```
+
+**The Issue**: When control.stop arrives at the server:
+- The chunker may be in the middle of accumulating silence for VAD detection
+- The flush happens BEFORE the full 1-second silence threshold is reached
+- Final chunks may be discarded due to insufficient silence duration
+- VAD never completes its silence threshold detection
+
+**Why This Causes Problems**:
+1. Streaming chunks arrive but final silence period is cut short
+2. Whisper doesn't have enough buffered silence to finalize chunks properly
+3. VAD never completes its silence threshold detection
+4. Flush happens prematurely with insufficient speech duration checks satisfied
+5. Result: incomplete/truncated transcriptions compared to Hammerspoon
+
+**Possible Solutions**:
+1. Add delay after audio capture stops before sending control.stop (gives VAD time to process final silence)
+2. Change flush behavior to be more lenient when explicitly stopped (vs. auto-chunking)
+3. Buffer final audio after stop signal for VAD processing
+4. Change control.stop to trigger async flush rather than immediate flush
+
+**Key Code Locations**:
+- Client stop handler: client/cmd/main.go lines 190-224
+- Server stop handler: server/internal/api/server.go lines 265-276
+- Pipeline stop: server/internal/transcription/pipeline.go lines 334-355
+- Chunker flush: server/internal/transcription/chunker.go lines 173-212
+
+**Files**: client/cmd/client/main.go, client/internal/ui/ui.go, server/internal/api/server.go, server/internal/transcription/pipeline.go, server/internal/transcription/chunker.go
+
+---
+
+## DarwinKit objc.Retain Causes Double-Free on Window Close
+
+**Discovered**: 2025-12-30
+
+**Problem**: Application crashes with SIGSEGV when closing a DarwinKit window that was previously retained using `objc.Retain()`.
+
+**Error Message**:
+```
+SIGSEGV: segmentation violation, signal arrived during cgo execution
+Stack trace shows: appkit.(*Window).Release called from runtime.runfinq()
+```
+
+**Root Cause**: When using `objc.Retain()` on a darwinkit window:
+1. `objc.Retain()` sets up a Go finalizer that will call `Release()` when the object is garbage collected
+2. If you close the window without releasing first, the window is deallocated by AppKit
+3. Later, when Go's GC runs, the finalizer tries to call Release() on the already-deallocated object
+4. This causes a double-free crash
+
+**Solution**: Call `Release()` before `Close()` in the window close method:
+```go
+func (w *Window) Close() {
+    w.nsWindow.Release()  // Release first to cancel the finalizer
+    w.nsWindow.Close()    // Then close the window
+}
+```
+
+**Why This Happens**: The darwinkit library uses Go finalizers to ensure Objective-C objects are properly released. However, when a window is closed by AppKit, it may be deallocated immediately (depending on `ReleasedWhenClosed` setting), leaving the finalizer pointing to freed memory.
+
+**Related Pattern**: This is similar to other CGO/Objective-C bridge gotchas where Go's GC and Objective-C's memory management can conflict.
+
+**Files**: client/internal/ui/window.go
+
+---

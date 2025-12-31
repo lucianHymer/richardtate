@@ -164,10 +164,16 @@ func (c *SmartChunker) flushChunk() {
 	// Reset VAD state
 	c.vad.Reset()
 
-	// Call callback asynchronously
+	// Release lock before calling callback (transcription can take time)
+	c.bufferMu.Unlock()
+
+	// Call callback synchronously so Stop() can wait for completion
 	if c.config.ChunkReadyCallback != nil {
-		go c.config.ChunkReadyCallback(chunk)
+		c.config.ChunkReadyCallback(chunk)
 	}
+
+	// Re-acquire lock (caller expects it to still be held)
+	c.bufferMu.Lock()
 }
 
 // Flush forces a flush of current buffer (called on Stop)
