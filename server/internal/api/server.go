@@ -346,6 +346,7 @@ func (s *Server) sendTranscriptionResults(peerID string, peer *webrtc.PeerConnec
 	}
 
 	// Drain any remaining results in the channel
+	// Since Stop() waits for in-flight transcriptions, results should already be in channel
 	s.logger.Debug("Draining remaining results for peer %s", peerID)
 drainLoop:
 	for {
@@ -355,8 +356,8 @@ drainLoop:
 				break drainLoop
 			}
 			s.processResult(peerID, peer, result)
-		default:
-			// No more results waiting
+		case <-time.After(100 * time.Millisecond):
+			// Short timeout - results should be available immediately
 			break drainLoop
 		}
 	}

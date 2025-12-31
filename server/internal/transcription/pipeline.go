@@ -21,6 +21,7 @@ type TranscriptionPipeline struct {
 	resultChan   chan TranscriptionResult
 	stoppedChan  chan struct{}             // Closed when Stop() completes (signals sender to exit)
 	stateTracker *ProcessingStateTracker   // Tracks processing state for loading indicator
+	inflightWg   sync.WaitGroup            // Tracks in-flight transcriptions
 	mu           sync.RWMutex
 	active       bool
 	stopped      bool // True after Stop() completes
@@ -178,6 +179,10 @@ func (p *TranscriptionPipeline) ProcessChunk(audioData []byte, timestamp int64) 
 
 // transcribeChunk is called by the chunker when a chunk is ready for transcription
 func (p *TranscriptionPipeline) transcribeChunk(samples []int16) {
+	// Track this transcription as in-flight
+	p.inflightWg.Add(1)
+	defer p.inflightWg.Done()
+
 	duration := float64(len(samples)) / 16000.0
 
 	// Save debug WAV if enabled
@@ -277,6 +282,9 @@ func (p *TranscriptionPipeline) Stop() error {
 		p.chunker.ProcessSamples(remainingSamples)
 		p.chunker.Flush() // Flush again after adding RNNoise remainder
 	}
+
+	// Wait for any in-flight transcriptions to complete
+	p.inflightWg.Wait()
 
 	// Signal that stop is complete (sender can exit after draining results)
 	p.mu.Lock()
