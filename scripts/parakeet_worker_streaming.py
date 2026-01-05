@@ -14,6 +14,7 @@ import base64
 import numpy as np
 import traceback
 import os
+import gc
 from pathlib import Path
 import mlx.core as mx
 
@@ -106,6 +107,10 @@ class StreamingManager:
         # context_size=(256,256) they take 4+ minutes to finalize.
         # Future optimization could use smaller window and track finalized vs draft.
 
+        # CRITICAL: Clear MLX metal cache to prevent memory leak
+        # MLX aggressively caches intermediate computations
+        mx.metal.clear_cache()
+
         return {
             "text": full_text,  # Full current transcription (may revise)
             "is_final": False,  # Always false during streaming
@@ -121,6 +126,13 @@ class StreamingManager:
             except:
                 pass  # Context might already be closed
             del self.contexts[client_id]
+
+            # Clear MLX metal cache and run GC when stream ends
+            # This is a good cleanup point to release accumulated memory
+            mx.metal.clear_cache()
+            gc.collect()
+            sys.stderr.write(f"[Parakeet] Stream ended, caches cleared for {client_id}\n")
+            sys.stderr.flush()
 
 def main():
     # Get model path from command line

@@ -18,7 +18,9 @@ import numpy as np
 import traceback
 import os
 import tempfile
+import gc
 from pathlib import Path
+import mlx.core as mx
 
 # Ensure common FFmpeg locations are in PATH
 ffmpeg_paths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']
@@ -70,7 +72,13 @@ def transcribe_audio(model, audio_samples, sample_rate=16000):
     try:
         # Transcribe from file
         result = model.transcribe(temp_wav_path)
-        return result.text
+        text = result.text
+
+        # CRITICAL: Clear MLX metal cache to prevent memory leak
+        # MLX aggressively caches intermediate computations which accumulate over time
+        mx.metal.clear_cache()
+
+        return text
     finally:
         # Clean up temporary file
         try:
@@ -97,6 +105,10 @@ def main():
         error_msg = f"Failed to load model: {str(e)}"
         print(json.dumps({"error": error_msg}), flush=True)
         sys.exit(1)
+
+    # Counter for periodic garbage collection
+    transcription_count = 0
+    GC_INTERVAL = 10  # Run full GC every N transcriptions
 
     # Main processing loop - simple batch transcription
     while True:
@@ -129,6 +141,13 @@ def main():
 
             # Transcribe
             text = transcribe_audio(model, audio_samples, sample_rate)
+
+            # Periodic garbage collection to prevent Python memory accumulation
+            transcription_count += 1
+            if transcription_count % GC_INTERVAL == 0:
+                gc.collect()
+                sys.stderr.write(f"[Parakeet] GC run after {transcription_count} transcriptions\n")
+                sys.stderr.flush()
 
             # Send response
             response = {"text": text}
